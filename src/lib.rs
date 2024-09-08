@@ -137,19 +137,36 @@ impl Session {
         }
     }
 
-    /// Enables the telemetry session, allowing it to report telemetry data to the configured services.
+    /// Returns a reference to the [`AtomicBool`] which is used to control the enabled state of the telemetry session.
     ///
-    /// This method can be called to re-enable telemetry emission if it has been disabled by a
-    /// previous call to [`Session::disable`]. By default the telemetry session is configured to
-    /// be enabled.
-    pub fn enable(&self) {
-        self.enabled.store(true, Ordering::Relaxed);
-    }
-
-    /// Disables the telemetry session, preventing configured services from sending telemetry data
-    /// (where supported by the telemetry provider).
-    pub fn disable(&self) {
-        self.enabled.store(false, Ordering::Relaxed);
+    /// This method is intended to be used by the hosting application to either check, or modify, whether the telemetry
+    /// integrations report data to their respective services. The [`AtomicBool`](std::sync::atomic::AtomicBool)
+    /// is used to ensure that the enabled state can be modified safely from multiple threads.
+    ///
+    /// ## Example
+    /// ```rust
+    /// use tracing_batteries::Session;
+    /// use std::sync::atomic::Ordering;
+    ///
+    /// # use std::sync::{Arc, atomic::AtomicBool};
+    /// # use tracing_batteries::{Metadata, BatteryBuilder, Battery};
+    /// # struct MockBattery;
+    /// # impl Battery for MockBattery {}
+    /// # impl BatteryBuilder for MockBattery {
+    /// #    fn setup(self, _metadata: &Metadata, _enabled: Arc<AtomicBool>) -> Box<dyn Battery> {
+    /// #       Box::new(MockBattery)
+    /// #    }
+    /// # }
+    /// let session = Session::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
+    ///   .with_battery(MockBattery);
+    ///
+    /// let telemetry_enabled = session.enable();
+    /// telemetry_enabled.store(false, Ordering::Relaxed);
+    ///
+    /// session.shutdown();
+    /// ```
+    pub fn enable(&self) -> Arc<AtomicBool> {
+        self.enabled.clone()
     }
 }
 
