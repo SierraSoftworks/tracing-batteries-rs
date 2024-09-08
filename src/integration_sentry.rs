@@ -2,7 +2,7 @@ use std::sync::{atomic::AtomicBool, Arc};
 
 use crate::{Battery, BatteryBuilder, Metadata};
 
-pub use sentry;
+use sentry;
 
 struct SentryBattery {
     raven: sentry::ClientInitGuard,
@@ -33,7 +33,7 @@ impl Battery for SentryBattery {
 ///
 /// ## Example (using DSN)
 /// ```no_run
-/// use tracing_batteries::{Session, Sentry, sentry};
+/// use tracing_batteries::{Session, Sentry, prelude::*};
 ///
 /// let session = Session::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
 ///  .with_battery(Sentry::new("https://username:password@ingest.sentry.io/project"));
@@ -45,7 +45,7 @@ impl Battery for SentryBattery {
 ///
 /// ## Example (using DSN and ClientOptions)
 /// ```no_run
-/// use tracing_batteries::{Session, Sentry, sentry};
+/// use tracing_batteries::{Session, Sentry, prelude::*};
 ///
 /// let session = Session::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
 ///   .with_battery(Sentry::new(("https://username:password@ingest.sentry.io/project", sentry::ClientOptions {
