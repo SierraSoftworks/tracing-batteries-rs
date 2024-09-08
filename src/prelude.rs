@@ -1,6 +1,5 @@
 pub use tracing::{
-  event, trace, debug, info, warn, error,
-  span, trace_span, debug_span, info_span, warn_span, error_span,
-  Instrument,
-  field::{debug, display},
+    debug, debug_span, error, error_span, event,
+    field::{debug, display},
+    info, info_span, span, trace, trace_span, warn, warn_span, Instrument,
 };
