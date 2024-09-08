@@ -81,6 +81,7 @@ impl Session {
     ///   .with_context("example", "yes")
     ///   .with_battery(Sentry::new("https://yourdsn@sentry.example.com/app-id"));
     /// ```
+    #[allow(clippy::new_ret_no_self)]
     pub fn new<S: Into<Cow<'static, str>>, V: Into<Cow<'static, str>>>(
         service: S,
         version: V,
