@@ -1,4 +1,8 @@
-use std::{borrow::Cow, collections::HashMap};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    sync::{atomic::AtomicBool, Arc},
+};
 
 use opentelemetry::trace::TracerProvider;
 use opentelemetry_otlp::WithExportConfig;
@@ -75,7 +79,7 @@ impl OpenTelemetry {
 }
 
 impl BatteryBuilder for OpenTelemetry {
-    fn setup(self, metadata: &crate::Metadata) -> Box<dyn Battery> {
+    fn setup(self, metadata: &crate::Metadata, enabled: Arc<AtomicBool>) -> Box<dyn Battery> {
         let mut resource_metadata = vec![
             opentelemetry::KeyValue::new("service.name", metadata.service.clone()),
             opentelemetry::KeyValue::new("service.version", metadata.version.clone()),
@@ -132,6 +136,9 @@ impl BatteryBuilder for OpenTelemetry {
 
         tracing_subscriber::registry()
             .with(tracing_subscriber::filter::LevelFilter::DEBUG)
+            .with(tracing_subscriber::filter::dynamic_filter_fn(
+                move |_meta, _ctx| enabled.load(std::sync::atomic::Ordering::Relaxed),
+            ))
             .with(tracing_opentelemetry::OpenTelemetryLayer::new(
                 provider.tracer(metadata.service.clone()),
             ))

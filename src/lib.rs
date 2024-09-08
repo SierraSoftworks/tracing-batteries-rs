@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::{borrow::Cow, collections::HashMap};
 
 #[cfg(feature = "opentelemetry")]
@@ -31,7 +33,7 @@ pub trait BatteryBuilder {
     /// The `metadata.context` should usually be attached to any descriptive information about
     /// the service that is reported to the telemetry system (for example, the `Resource`,
     /// `extra` context fields, or identifying dimensions).
-    fn setup(self, metadata: &Metadata) -> Box<dyn Battery>;
+    fn setup(self, metadata: &Metadata, enabled: Arc<AtomicBool>) -> Box<dyn Battery>;
 }
 
 /// A trait which is implemented by the initialized integration, allowing it to receive
@@ -62,6 +64,7 @@ pub trait Battery {
 pub struct Session {
     metadata: Metadata,
     batteries: Vec<Box<dyn Battery>>,
+    enabled: Arc<AtomicBool>,
 }
 
 impl Session {
@@ -133,13 +136,28 @@ impl Session {
             battery.shutdown();
         }
     }
+
+    /// Enables the telemetry session, allowing it to report telemetry data to the configured services.
+    ///
+    /// This method can be called to re-enable telemetry emission if it has been disabled by a
+    /// previous call to [`Session::disable`]. By default the telemetry session is configured to
+    /// be enabled.
+    pub fn enable(&self) {
+        self.enabled.store(true, Ordering::Relaxed);
+    }
+
+    /// Disables the telemetry session, preventing configured services from sending telemetry data
+    /// (where supported by the telemetry provider).
+    pub fn disable(&self) {
+        self.enabled.store(false, Ordering::Relaxed);
+    }
 }
 
 impl Session {
     /// Attaches a new battery to the telemetry session, integrating the requested telemetry
     /// provider into the application.
     pub fn with_battery<B: BatteryBuilder>(mut self, builder: B) -> Self {
-        let battery = builder.setup(&self.metadata);
+        let battery = builder.setup(&self.metadata, self.enabled.clone());
         self.batteries.push(battery);
         self
     }
@@ -181,6 +199,7 @@ impl Metadata {
         Session {
             metadata: self,
             batteries: Vec::new(),
+            enabled: Arc::new(AtomicBool::new(true)),
         }
         .with_battery(battery)
     }
@@ -188,6 +207,8 @@ impl Metadata {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{atomic::AtomicBool, Arc};
+
     use crate::{Battery, BatteryBuilder, Session};
 
     #[test]
@@ -202,7 +223,7 @@ mod tests {
     struct ExampleBattery;
 
     impl BatteryBuilder for ExampleBattery {
-        fn setup(self, _metadata: &crate::Metadata) -> Box<dyn Battery> {
+        fn setup(self, _metadata: &crate::Metadata, _enabled: Arc<AtomicBool>) -> Box<dyn Battery> {
             println!("ExampleBattery initialized");
             Box::new(ExampleBattery)
         }

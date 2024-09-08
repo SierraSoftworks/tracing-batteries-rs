@@ -1,3 +1,5 @@
+use std::sync::{atomic::AtomicBool, Arc};
+
 use crate::{Battery, BatteryBuilder, Metadata};
 
 pub use sentry;
@@ -69,11 +71,28 @@ impl Sentry {
 }
 
 impl BatteryBuilder for Sentry {
-    fn setup(self, metadata: &Metadata) -> Box<dyn Battery> {
+    fn setup(self, metadata: &Metadata, enabled: Arc<AtomicBool>) -> Box<dyn Battery> {
         let mut config = self.config;
         config.release = match config.release {
             Some(release) => Some(release),
             None => Some(format!("{}@{}", metadata.service, metadata.version).into()),
+        };
+
+        config.before_send = match config.before_send {
+            Some(before_send) => Some(Arc::new(Box::new(move |event| {
+                if enabled.load(std::sync::atomic::Ordering::Relaxed) {
+                    before_send(event)
+                } else {
+                    None
+                }
+            }))),
+            None => Some(Arc::new(Box::new(move |event| {
+                if enabled.load(std::sync::atomic::Ordering::Relaxed) {
+                    Some(event)
+                } else {
+                    None
+                }
+            }))),
         };
 
         let raven = sentry::init(config);
