@@ -3,3 +3,9 @@ pub use tracing::{
     field::{debug, display},
     info, info_span, span, trace, trace_span, warn, warn_span, Event, Instrument, Span,
 };
+
+#[cfg(feature = "opentelemetry")]
+pub use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+#[cfg(feature = "opentelemetry")]
+pub use opentelemetry::{propagation::TextMapPropagator, trace::TraceContextExt};
