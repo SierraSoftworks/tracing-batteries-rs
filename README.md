@@ -16,11 +16,15 @@ The first step here is adding the `tracing-batteries-rs` crate to your
 
 ```toml
 [dependencies]
-tracing-batteries = {
-  git = "https://github.com/sierrasoftworks/tracing-batteries-rs.git",
-  features = ["sentry", "tracing-opentelemetry"]
-}
+tracing-batteries = { git = "https://github.com/sierrasoftworks/tracing-batteries-rs.git" }
 ```
+
+**NOTE** I'm opting to use Git here because the goal of this library is to handle all of the
+continuous updates to the broader `tracing` and `opentelemetry` ecosystems, using Dependabot
+to do so automatically. As such, tracking the `main` branch of this repository is the best way
+(for my own use cases) to handle migrations across the various tools that depend upon this library.
+Your own mileage may vary, and if you have strong feelings about this, please feel free to maintain
+your own fork with a lower update cadence.
 
 Then you'll want to add the tracing initialization to your application.
 
