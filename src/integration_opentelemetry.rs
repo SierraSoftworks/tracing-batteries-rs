@@ -134,6 +134,10 @@ impl BatteryBuilder for OpenTelemetry {
 
         opentelemetry::global::set_tracer_provider(provider.clone());
 
+        opentelemetry::global::set_text_map_propagator(
+            opentelemetry_sdk::propagation::TraceContextPropagator::new(),
+        );
+
         tracing_subscriber::registry()
             .with(tracing_subscriber::filter::LevelFilter::DEBUG)
             .with(tracing_subscriber::filter::dynamic_filter_fn(

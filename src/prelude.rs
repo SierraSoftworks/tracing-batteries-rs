@@ -5,7 +5,7 @@ pub use tracing::{
 };
 
 #[cfg(feature = "opentelemetry")]
-pub use tracing_opentelemetry::OpenTelemetrySpanExt;
+pub use tracing_opentelemetry::{self, OpenTelemetrySpanExt};
 
 #[cfg(feature = "opentelemetry")]
-pub use opentelemetry::{propagation::TextMapPropagator, trace::TraceContextExt};
+pub use opentelemetry::{self, trace::TraceContextExt};
