@@ -44,3 +44,52 @@ fn main() {
     session.shutdown();
 }
 ```
+
+## Integrations
+This library ships with several integration "batteries" which you can easily
+add to your `Session` to enable telemetry emission to various backends.
+
+### OpenTelemetry
+The `OpenTelemetry` integration allows you to send telemetry data from the `tracing` crate
+to an OpenTelemetry compatible backend.
+
+**NOTE** You will need to ensure that the `opentelemetry` feature is enabled, it is enabled by default.
+
+```rust
+use tracing_batteries::{Session, OpenTelemetry, OpenTelemetryProtocol};
+use tracing_batteries::prelude::*;
+
+fn main() {
+    let session = Session::new("my-service", env!("CARGO_PKG_VERSION"))
+        .with_battery(OpenTelemetry::new("https://api.honeycomb.io")
+          .with_header("x-honeycomb-team", "your-access-token"));
+
+    // tracing_batteries::prelude::info_span is re-exported from tracing to allow you to use it in your code
+    info_span!("my-span").in_scope(|| {
+        info!("Hello, OpenTelemetry!");
+    });
+
+    session.shutdown();
+}
+```
+
+### Sentry
+The `Sentry` integration allows you to send session and error information to
+Sentry from within your application.
+
+**NOTE** You will need to ensure that the `sentry` feature is enabled, it is enabled by default.
+
+```rust
+use tracing_batteries::{Session, Sentry};
+use tracing_batteries::prelude::*;
+
+fn main() {
+    let session = Session::new("my-service", env!("CARGO_PKG_VERSION"))
+        .with_battery(Sentry::new("https://user:pass@ingest.sentry.io/project"));
+
+    // tracing_batteries::prelude::sentry is re-exported from the sentry crate to allow you to use it in your code
+    sentry::capture_message("Hello, Sentry!", sentry::Level::Info);
+
+    session.shutdown();
+}
+```
