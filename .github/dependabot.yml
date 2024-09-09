@@ -4,6 +4,12 @@ updates:
     package-ecosystem: cargo
     schedule:
       interval: daily
+    groups:
+      opentelemetry:
+        patterns:
+          - "opentelemetry*"
+          - "tracing*"
+          - "tonic"
   - directory: /
     package-ecosystem: github-actions
     schedule:
