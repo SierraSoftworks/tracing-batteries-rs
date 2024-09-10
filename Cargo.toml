@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-opentelemetry = { version = "0.24", optional = true }
-opentelemetry_sdk = { version = "0.24.1", features = [
+opentelemetry = { version = "0.25", optional = true }
+opentelemetry_sdk = { version = "0.25.0", features = [
   "rt-tokio",
 ], optional = true }
-opentelemetry-otlp = { version = "0.17", features = [
+opentelemetry-otlp = { version = "0.25", features = [
   "http-json",
   "http-proto",
   "reqwest-rustls-webpki-roots",
