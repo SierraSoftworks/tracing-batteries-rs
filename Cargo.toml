@@ -23,7 +23,7 @@ sentry = { version = "0.34", default-features = false, optional = true, features
   "log",
   "rustls",
 ] }
-tonic = { version = "0.12.2", features = ["tls-roots"], optional = true }
+tonic = { version = "0.12.3", features = ["tls-roots"], optional = true }
 tracing = { version = "0.1.40", features = ["log"] }
 tracing-attributes = { git = "https://github.com/SierraSoftworks/tracing.git" }
 tracing-futures = { version = "0.2.5", features = ["futures-03"] }
