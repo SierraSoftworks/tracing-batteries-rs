@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-opentelemetry = { version = "0.26", optional = true }
-opentelemetry_sdk = { version = "0.26", features = [
+opentelemetry = { version = "0.27", optional = true }
+opentelemetry_sdk = { version = "0.27", features = [
   "rt-tokio",
 ], optional = true }
-opentelemetry-otlp = { version = "0.26", features = [
+opentelemetry-otlp = { version = "0.27", features = [
   "http-json",
   "http-proto",
   "reqwest-rustls-webpki-roots",
@@ -24,10 +24,10 @@ sentry = { version = "0.34", default-features = false, optional = true, features
   "rustls",
 ] }
 tonic = { version = "0.12.3", features = ["tls-roots"], optional = true }
-tracing = { version = "0.1.40", features = ["log"] }
+tracing = { version = "0.1.41", features = ["log"] }
 tracing-attributes = { git = "https://github.com/SierraSoftworks/tracing.git" }
 tracing-futures = { version = "0.2.5", features = ["futures-03"] }
-tracing-opentelemetry = { version = "0.27", optional = true }
+tracing-opentelemetry = { version = "0.28", optional = true }
 tracing-subscriber = { version = "0.3.18", features = ["tracing-log"] }
 
 [features]
