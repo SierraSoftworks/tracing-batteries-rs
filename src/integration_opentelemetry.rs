@@ -18,6 +18,7 @@ use tracing_subscriber::{
 use crate::{Battery, BatteryBuilder};
 pub use opentelemetry_otlp::Protocol as OpenTelemetryProtocol;
 pub use opentelemetry_sdk::trace::Sampler as OpenTelemetrySampler;
+pub use tracing::Level as OpenTelemetryLevel;
 
 /// An [OpenTelemetry](opentelemetry) integration which leverages the [`tracing`] ecosystem
 /// to emit span information to an OpenTelemetry collector.
@@ -61,6 +62,7 @@ pub struct OpenTelemetry {
     headers: HashMap<Cow<'static, str>, Cow<'static, str>>,
     protocol: Option<OpenTelemetryProtocol>,
     sampler: OpenTelemetrySampler,
+    level: OpenTelemetryLevel,
 }
 
 impl OpenTelemetry {
@@ -98,6 +100,7 @@ impl OpenTelemetry {
             },
             protocol: None,
             sampler: Self::build_sampler(),
+            level: OpenTelemetryLevel::INFO,
         }
     }
 
@@ -177,6 +180,23 @@ impl OpenTelemetry {
     /// ```
     pub fn with_sampler(mut self, sampler: OpenTelemetrySampler) -> Self {
         self.sampler = sampler;
+        self
+    }
+
+    /// Configures the OpenTelemetry integration to use the provided log level.
+    ///
+    /// This method is used to configure the log level used by the OpenTelemetry integration,
+    /// the log level is used to determine which spans should be recorded and exported.
+    ///
+    /// ## Example
+    /// ```rust
+    /// use tracing_batteries::{OpenTelemetry, OpenTelemetryLevel};
+    ///
+    /// OpenTelemetry::new("localhost:4317")
+    ///   .with_level(OpenTelemetryLevel::DEBUG);
+    /// ```
+    pub fn with_level(mut self, level: OpenTelemetryLevel) -> Self {
+        self.level = level;
         self
     }
 
@@ -316,7 +336,13 @@ impl BatteryBuilder for OpenTelemetry {
         );
 
         let registry = tracing_subscriber::registry()
-            .with(tracing_subscriber::filter::LevelFilter::DEBUG)
+            .with(match self.level {
+                OpenTelemetryLevel::ERROR => tracing_subscriber::filter::LevelFilter::ERROR,
+                OpenTelemetryLevel::WARN => tracing_subscriber::filter::LevelFilter::WARN,
+                OpenTelemetryLevel::INFO => tracing_subscriber::filter::LevelFilter::INFO,
+                OpenTelemetryLevel::DEBUG => tracing_subscriber::filter::LevelFilter::DEBUG,
+                OpenTelemetryLevel::TRACE => tracing_subscriber::filter::LevelFilter::TRACE,
+            })
             .with(tracing_subscriber::filter::dynamic_filter_fn(
                 move |_meta, _ctx| enabled.load(std::sync::atomic::Ordering::Relaxed),
             ));
