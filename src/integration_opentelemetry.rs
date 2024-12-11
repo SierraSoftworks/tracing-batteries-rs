@@ -5,11 +5,8 @@ use std::{
 };
 
 use opentelemetry::trace::TracerProvider;
-use opentelemetry_otlp::WithExportConfig;
-use opentelemetry_sdk::{
-    trace::{Config, Sampler},
-    Resource,
-};
+use opentelemetry_otlp::{WithExportConfig, WithHttpConfig, WithTonicConfig};
+use opentelemetry_sdk::{trace::Sampler, Resource};
 use tracing::Subscriber;
 use tracing_subscriber::{
     layer::SubscriberExt, registry::LookupSpan, util::SubscriberInitExt, Layer,
@@ -212,32 +209,37 @@ impl OpenTelemetry {
             return None;
         }
 
+        let pipeline_builder = opentelemetry_sdk::trace::Builder::default()
+            .with_resource(self.build_resource(metadata))
+            .with_sampler(self.sampler.clone());
+
         let pipeline_builder = match self.get_protocol() {
-            OpenTelemetryProtocol::Grpc => {
-                opentelemetry_otlp::new_pipeline().tracing().with_exporter(
-                    opentelemetry_otlp::new_exporter()
-                        .tonic()
-                        .with_endpoint(self.endpoint.clone())
-                        .with_metadata({
-                            let mut tracing_metadata = tonic::metadata::MetadataMap::new();
-                            for (key, value) in self.headers.iter() {
-                                tracing_metadata.insert(
-                                    key.parse()
-                                        .unwrap_or(tonic::metadata::MetadataKey::from_static("")),
-                                    value
-                                        .to_string()
-                                        .parse()
-                                        .unwrap_or(tonic::metadata::MetadataValue::from_static("")),
-                                );
-                            }
-                            tracing_metadata
-                        }),
-                )
-            }
+            OpenTelemetryProtocol::Grpc => pipeline_builder.with_batch_exporter(
+                opentelemetry_otlp::SpanExporter::builder()
+                    .with_tonic()
+                    .with_endpoint(self.endpoint.clone())
+                    .with_metadata({
+                        let mut tracing_metadata = tonic::metadata::MetadataMap::new();
+                        for (key, value) in self.headers.iter() {
+                            tracing_metadata.insert(
+                                key.parse()
+                                    .unwrap_or(tonic::metadata::MetadataKey::from_static("")),
+                                value
+                                    .to_string()
+                                    .parse()
+                                    .unwrap_or(tonic::metadata::MetadataValue::from_static("")),
+                            );
+                        }
+                        tracing_metadata
+                    })
+                    .build()
+                    .ok()?,
+                opentelemetry_sdk::runtime::Tokio,
+            ),
             proto @ (OpenTelemetryProtocol::HttpBinary | OpenTelemetryProtocol::HttpJson) => {
-                opentelemetry_otlp::new_pipeline().tracing().with_exporter(
-                    opentelemetry_otlp::new_exporter()
-                        .http()
+                pipeline_builder.with_batch_exporter(
+                    opentelemetry_otlp::SpanExporter::builder()
+                        .with_http()
                         .with_protocol(proto)
                         .with_endpoint(format!("{}/v1/traces", self.endpoint))
                         .with_headers({
@@ -247,24 +249,20 @@ impl OpenTelemetry {
                             }
                             tracing_headers
                         })
-                        .with_http_client(reqwest::Client::new()),
+                        .with_http_client(reqwest::Client::new())
+                        .build()
+                        .ok()?,
+                    opentelemetry_sdk::runtime::Tokio,
                 )
             }
         };
 
-        if let Some(provider) = pipeline_builder
-            .with_trace_config(self.build_trace_config(metadata))
-            .install_batch(opentelemetry_sdk::runtime::Tokio)
-            .ok()
-        {
-            opentelemetry::global::set_tracer_provider(provider.clone());
+        let provider = pipeline_builder.build();
+        opentelemetry::global::set_tracer_provider(provider.clone());
 
-            Some(Box::new(tracing_opentelemetry::OpenTelemetryLayer::new(
-                provider.tracer(metadata.service.clone()),
-            )))
-        } else {
-            None
-        }
+        Some(Box::new(tracing_opentelemetry::OpenTelemetryLayer::new(
+            provider.tracer(metadata.service.clone()),
+        )))
     }
 
     fn get_protocol(&self) -> OpenTelemetryProtocol {
@@ -274,12 +272,6 @@ impl OpenTelemetry {
             Some("grpc") => opentelemetry_otlp::Protocol::Grpc,
             _ => self.protocol.unwrap_or(OpenTelemetryProtocol::Grpc),
         }
-    }
-
-    fn build_trace_config(&self, metadata: &crate::Metadata) -> Config {
-        opentelemetry_sdk::trace::Config::default()
-            .with_resource(self.build_resource(metadata))
-            .with_sampler(self.sampler.clone())
     }
 
     fn build_resource(&self, metadata: &crate::Metadata) -> Resource {
