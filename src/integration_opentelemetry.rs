@@ -59,7 +59,7 @@ pub struct OpenTelemetry {
     headers: HashMap<Cow<'static, str>, Cow<'static, str>>,
     protocol: Option<OpenTelemetryProtocol>,
     sampler: OpenTelemetrySampler,
-    level: OpenTelemetryLevel,
+    level: Option<OpenTelemetryLevel>,
 }
 
 impl OpenTelemetry {
@@ -97,7 +97,7 @@ impl OpenTelemetry {
             },
             protocol: None,
             sampler: Self::build_sampler(),
-            level: OpenTelemetryLevel::INFO,
+            level: None,
         }
     }
 
@@ -193,7 +193,7 @@ impl OpenTelemetry {
     ///   .with_level(OpenTelemetryLevel::DEBUG);
     /// ```
     pub fn with_level(mut self, level: OpenTelemetryLevel) -> Self {
-        self.level = level;
+        self.level = Some(level);
         self
     }
 
@@ -319,6 +319,22 @@ impl OpenTelemetry {
             })
             .unwrap_or(opentelemetry_sdk::trace::Sampler::AlwaysOn)
     }
+
+    fn build_level(&self) -> OpenTelemetryLevel {
+        self.level.unwrap_or_else(|| {
+            match std::env::var("LOG_LEVEL")
+                .map(|s| s.to_lowercase())
+                .as_deref()
+            {
+                Ok("error") => OpenTelemetryLevel::ERROR,
+                Ok("warn") => OpenTelemetryLevel::WARN,
+                Ok("info") => OpenTelemetryLevel::INFO,
+                Ok("debug") => OpenTelemetryLevel::DEBUG,
+                Ok("trace") => OpenTelemetryLevel::TRACE,
+                _ => OpenTelemetryLevel::INFO,
+            }
+        })
+    }
 }
 
 impl BatteryBuilder for OpenTelemetry {
@@ -328,7 +344,7 @@ impl BatteryBuilder for OpenTelemetry {
         );
 
         let registry = tracing_subscriber::registry()
-            .with(match self.level {
+            .with(match self.build_level() {
                 OpenTelemetryLevel::ERROR => tracing_subscriber::filter::LevelFilter::ERROR,
                 OpenTelemetryLevel::WARN => tracing_subscriber::filter::LevelFilter::WARN,
                 OpenTelemetryLevel::INFO => tracing_subscriber::filter::LevelFilter::INFO,
