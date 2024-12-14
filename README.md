@@ -56,13 +56,14 @@ to an OpenTelemetry compatible backend.
 **NOTE** You will need to ensure that the `opentelemetry` feature is enabled, it is enabled by default.
 
 ```rust
-use tracing_batteries::{Session, OpenTelemetry, OpenTelemetryProtocol};
+use tracing_batteries::{Session, OpenTelemetry, OpenTelemetryProtocol, OpenTelemetryLevel};
 use tracing_batteries::prelude::*;
 
 fn main() {
     let session = Session::new("my-service", env!("CARGO_PKG_VERSION"))
         .with_battery(OpenTelemetry::new("https://api.honeycomb.io")
-          .with_header("x-honeycomb-team", "your-access-token"));
+          .with_header("x-honeycomb-team", "your-access-token")
+          .with_default_level(OpenTelemetryLevel::WARN);
 
     // tracing_batteries::prelude::info_span is re-exported from tracing to allow you to use it in your code
     info_span!("my-span").in_scope(|| {

@@ -59,7 +59,7 @@ pub struct OpenTelemetry {
     headers: HashMap<Cow<'static, str>, Cow<'static, str>>,
     protocol: Option<OpenTelemetryProtocol>,
     sampler: OpenTelemetrySampler,
-    level: Option<OpenTelemetryLevel>,
+    default_level: Option<OpenTelemetryLevel>,
 }
 
 impl OpenTelemetry {
@@ -97,7 +97,7 @@ impl OpenTelemetry {
             },
             protocol: None,
             sampler: Self::build_sampler(),
-            level: None,
+            default_level: None,
         }
     }
 
@@ -190,10 +190,10 @@ impl OpenTelemetry {
     /// use tracing_batteries::{OpenTelemetry, OpenTelemetryLevel};
     ///
     /// OpenTelemetry::new("localhost:4317")
-    ///   .with_level(OpenTelemetryLevel::DEBUG);
+    ///   .with_default_level(OpenTelemetryLevel::DEBUG);
     /// ```
-    pub fn with_level(mut self, level: OpenTelemetryLevel) -> Self {
-        self.level = Some(level);
+    pub fn with_default_level(mut self, level: OpenTelemetryLevel) -> Self {
+        self.default_level = Some(level);
         self
     }
 
@@ -321,19 +321,17 @@ impl OpenTelemetry {
     }
 
     fn build_level(&self) -> OpenTelemetryLevel {
-        self.level.unwrap_or_else(|| {
-            match std::env::var("LOG_LEVEL")
-                .map(|s| s.to_lowercase())
-                .as_deref()
-            {
-                Ok("error") => OpenTelemetryLevel::ERROR,
-                Ok("warn") => OpenTelemetryLevel::WARN,
-                Ok("info") => OpenTelemetryLevel::INFO,
-                Ok("debug") => OpenTelemetryLevel::DEBUG,
-                Ok("trace") => OpenTelemetryLevel::TRACE,
-                _ => OpenTelemetryLevel::INFO,
-            }
-        })
+        match std::env::var("LOG_LEVEL")
+            .map(|s| s.to_lowercase())
+            .as_deref()
+        {
+            Ok("error") => OpenTelemetryLevel::ERROR,
+            Ok("warn") => OpenTelemetryLevel::WARN,
+            Ok("info") => OpenTelemetryLevel::INFO,
+            Ok("debug") => OpenTelemetryLevel::DEBUG,
+            Ok("trace") => OpenTelemetryLevel::TRACE,
+            _ => self.default_level.unwrap_or(OpenTelemetryLevel::INFO),
+        }
     }
 }
 
