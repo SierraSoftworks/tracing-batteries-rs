@@ -59,7 +59,7 @@ pub struct OpenTelemetry {
     headers: HashMap<Cow<'static, str>, Cow<'static, str>>,
     protocol: Option<OpenTelemetryProtocol>,
     sampler: OpenTelemetrySampler,
-    level: OpenTelemetryLevel,
+    default_level: Option<OpenTelemetryLevel>,
 }
 
 impl OpenTelemetry {
@@ -97,7 +97,7 @@ impl OpenTelemetry {
             },
             protocol: None,
             sampler: Self::build_sampler(),
-            level: OpenTelemetryLevel::INFO,
+            default_level: None,
         }
     }
 
@@ -190,10 +190,10 @@ impl OpenTelemetry {
     /// use tracing_batteries::{OpenTelemetry, OpenTelemetryLevel};
     ///
     /// OpenTelemetry::new("localhost:4317")
-    ///   .with_level(OpenTelemetryLevel::DEBUG);
+    ///   .with_default_level(OpenTelemetryLevel::DEBUG);
     /// ```
-    pub fn with_level(mut self, level: OpenTelemetryLevel) -> Self {
-        self.level = level;
+    pub fn with_default_level(mut self, level: OpenTelemetryLevel) -> Self {
+        self.default_level = Some(level);
         self
     }
 
@@ -319,6 +319,20 @@ impl OpenTelemetry {
             })
             .unwrap_or(opentelemetry_sdk::trace::Sampler::AlwaysOn)
     }
+
+    fn build_level(&self) -> OpenTelemetryLevel {
+        match std::env::var("LOG_LEVEL")
+            .map(|s| s.to_lowercase())
+            .as_deref()
+        {
+            Ok("error") => OpenTelemetryLevel::ERROR,
+            Ok("warn") => OpenTelemetryLevel::WARN,
+            Ok("info") => OpenTelemetryLevel::INFO,
+            Ok("debug") => OpenTelemetryLevel::DEBUG,
+            Ok("trace") => OpenTelemetryLevel::TRACE,
+            _ => self.default_level.unwrap_or(OpenTelemetryLevel::INFO),
+        }
+    }
 }
 
 impl BatteryBuilder for OpenTelemetry {
@@ -328,7 +342,7 @@ impl BatteryBuilder for OpenTelemetry {
         );
 
         let registry = tracing_subscriber::registry()
-            .with(match self.level {
+            .with(match self.build_level() {
                 OpenTelemetryLevel::ERROR => tracing_subscriber::filter::LevelFilter::ERROR,
                 OpenTelemetryLevel::WARN => tracing_subscriber::filter::LevelFilter::WARN,
                 OpenTelemetryLevel::INFO => tracing_subscriber::filter::LevelFilter::INFO,
