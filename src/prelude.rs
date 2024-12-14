@@ -11,4 +11,4 @@ pub use sentry;
 pub use tracing_opentelemetry::{self, OpenTelemetrySpanExt};
 
 #[cfg(feature = "opentelemetry")]
-pub use opentelemetry::{self, trace::TraceContextExt};
+pub use opentelemetry::{self, trace::SpanKind as OpenTelemetrySpanKind, trace::TraceContextExt};
