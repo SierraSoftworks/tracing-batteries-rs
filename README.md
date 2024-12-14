@@ -81,12 +81,13 @@ Sentry from within your application.
 **NOTE** You will need to ensure that the `sentry` feature is enabled, it is enabled by default.
 
 ```rust
-use tracing_batteries::{Session, Sentry};
+use tracing_batteries::{Session, Sentry, SentryLevel};
 use tracing_batteries::prelude::*;
 
 fn main() {
     let session = Session::new("my-service", env!("CARGO_PKG_VERSION"))
-        .with_battery(Sentry::new("https://user:pass@ingest.sentry.io/project"));
+        .with_battery(Sentry::new("https://user:pass@ingest.sentry.io/project")
+          .with_default_level(SentryLevel::INFO));
 
     // tracing_batteries::prelude::sentry is re-exported from the sentry crate to allow you to use it in your code
     sentry::capture_message("Hello, Sentry!", sentry::Level::Info);
