@@ -60,6 +60,7 @@ pub struct OpenTelemetry {
     protocol: Option<OpenTelemetryProtocol>,
     sampler: OpenTelemetrySampler,
     default_level: Option<OpenTelemetryLevel>,
+    force_stdout: Option<bool>,
 }
 
 impl OpenTelemetry {
@@ -98,6 +99,7 @@ impl OpenTelemetry {
             protocol: None,
             sampler: Self::build_sampler(),
             default_level: None,
+            force_stdout: None,
         }
     }
 
@@ -195,6 +197,26 @@ impl OpenTelemetry {
     pub fn with_default_level(mut self, level: OpenTelemetryLevel) -> Self {
         self.default_level = Some(level);
         self
+    }
+
+    /// Configures the OpenTelemetry integration to force stdout logging behaviour.
+    ///
+    /// By default, the OpenTelemetry integration will log to stdout if an empty endpoint is provided.
+    /// This method can be used to force the integration to log to stdout even if an endpoint is provided,
+    /// or to disable stdout logging if an empty endpoint is provided.
+    ///
+    /// ## Example
+    /// ```rust
+    /// use tracing_batteries::OpenTelemetry;
+    ///
+    /// OpenTelemetry::new("localhost:4317")
+    ///  .with_stdout(true);
+    /// ```
+    pub fn with_stdout(self, stdout: bool) -> Self {
+        Self {
+            force_stdout: Some(stdout),
+            ..self
+        }
     }
 
     fn build_opentelemetry_layer<S>(
@@ -354,8 +376,21 @@ impl BatteryBuilder for OpenTelemetry {
             ));
 
         if let Some(provider) = self.build_opentelemetry_layer(metadata) {
-            registry.with(provider).init();
-        } else {
+            match self.force_stdout {
+                Some(true) => {
+                    registry
+                        .with(provider)
+                        .with(
+                            tracing_subscriber::filter::filter_fn(|meta| meta.is_event())
+                                .and_then(tracing_subscriber::fmt::layer()),
+                        )
+                        .init();
+                }
+                _ => {
+                    registry.with(provider).init();
+                }
+            }
+        } else if !matches!(self.force_stdout, Some(false)) {
             registry
                 .with(
                     tracing_subscriber::filter::filter_fn(|meta| meta.is_event())
