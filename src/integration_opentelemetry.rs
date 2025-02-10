@@ -7,6 +7,7 @@ use std::{
 use opentelemetry::trace::TracerProvider;
 use opentelemetry_otlp::{WithExportConfig, WithHttpConfig, WithTonicConfig};
 use opentelemetry_sdk::{trace::Sampler, Resource};
+use tonic::metadata::MetadataKey;
 use tracing::Subscriber;
 use tracing_subscriber::{
     layer::SubscriberExt, registry::LookupSpan, util::SubscriberInitExt, Layer,
@@ -16,6 +17,8 @@ use crate::{Battery, BatteryBuilder};
 pub use opentelemetry_otlp::Protocol as OpenTelemetryProtocol;
 pub use opentelemetry_sdk::trace::Sampler as OpenTelemetrySampler;
 pub use tracing::Level as OpenTelemetryLevel;
+
+const KEY_NOT_PARSED_PLACEHOLDER: &'static str = "x-key-not-parsed-correctly";
 
 /// An [OpenTelemetry](opentelemetry) integration which leverages the [`tracing`] ecosystem
 /// to emit span information to an OpenTelemetry collector.
@@ -243,14 +246,18 @@ impl OpenTelemetry {
                     .with_metadata({
                         let mut tracing_metadata = tonic::metadata::MetadataMap::new();
                         for (key, value) in self.headers.iter() {
-                            tracing_metadata.insert(
-                                key.parse()
-                                    .unwrap_or(tonic::metadata::MetadataKey::from_static("")),
-                                value
-                                    .to_string()
-                                    .parse()
-                                    .unwrap_or(tonic::metadata::MetadataValue::from_static("")),
-                            );
+                            if let (key, Ok(value)) = (
+                                key.parse().unwrap_or_else(|_| {
+                                    tonic::metadata::MetadataKey::from_static(
+                                        KEY_NOT_PARSED_PLACEHOLDER,
+                                    )
+                                }),
+                                value.to_string().parse(),
+                            ) {
+                                if key.as_str() != KEY_NOT_PARSED_PLACEHOLDER {
+                                    tracing_metadata.insert(key, value);
+                                }
+                            }
                         }
                         tracing_metadata
                     })
@@ -412,5 +419,19 @@ impl Battery for OpenTelemetryBattery {
 
     fn record_error(&self, error: &dyn std::error::Error) {
         opentelemetry::trace::get_active_span(|span| span.record_error(error))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::*;
+
+    #[tokio::test]
+    async fn otel_setup() {
+        let session = Session::new("example", "0.0.1").with_battery(
+            OpenTelemetry::new("localhost:4317").with_header("test-header", "test-value"),
+        );
+
+        session.shutdown();
     }
 }
