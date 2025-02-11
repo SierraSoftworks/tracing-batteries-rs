@@ -31,7 +31,7 @@ tracing-opentelemetry = { version = "0.28", optional = true }
 tracing-subscriber = { version = "0.3.19", features = ["tracing-log"] }
 
 [dev-dependencies]
-tokio = { version = "1.10.0", features = ["full"] }
+tokio = { version = "1.43.0", features = ["full"] }
 
 [features]
 default = ["sentry", "opentelemetry"]
