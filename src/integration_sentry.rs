@@ -10,7 +10,7 @@ struct SentryBattery {
 }
 
 impl Battery for SentryBattery {
-    fn shutdown(&self) {
+    fn shutdown(&mut self) {
         sentry::end_session_with_status(sentry::protocol::SessionStatus::Exited);
         self.raven.close(None);
     }

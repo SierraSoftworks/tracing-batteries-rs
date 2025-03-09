@@ -6,12 +6,11 @@ use std::{
 
 use opentelemetry::trace::TracerProvider;
 use opentelemetry_otlp::{WithExportConfig, WithHttpConfig, WithTonicConfig};
-use opentelemetry_sdk::{trace::Sampler, Resource};
-use tonic::metadata::MetadataKey;
-use tracing::Subscriber;
-use tracing_subscriber::{
-    layer::SubscriberExt, registry::LookupSpan, util::SubscriberInitExt, Layer,
+use opentelemetry_sdk::{
+    trace::{Sampler, SdkTracerProvider},
+    Resource,
 };
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
 use crate::{Battery, BatteryBuilder};
 pub use opentelemetry_otlp::Protocol as OpenTelemetryProtocol;
@@ -222,19 +221,15 @@ impl OpenTelemetry {
         }
     }
 
-    fn build_opentelemetry_layer<S>(
+    fn build_opentelemetry_provider(
         &self,
         metadata: &crate::Metadata,
-    ) -> Option<Box<dyn Layer<S> + Send + Sync + 'static>>
-    where
-        S: Subscriber + Send + Sync,
-        for<'a> S: LookupSpan<'a>,
-    {
+    ) -> Option<SdkTracerProvider> {
         if self.endpoint.is_empty() {
             return None;
         }
 
-        let pipeline_builder = opentelemetry_sdk::trace::Builder::default()
+        let pipeline_builder = opentelemetry_sdk::trace::TracerProviderBuilder::default()
             .with_resource(self.build_resource(metadata))
             .with_sampler(self.sampler.clone());
 
@@ -263,7 +258,6 @@ impl OpenTelemetry {
                     })
                     .build()
                     .ok()?,
-                opentelemetry_sdk::runtime::Tokio,
             ),
             proto @ (OpenTelemetryProtocol::HttpBinary | OpenTelemetryProtocol::HttpJson) => {
                 pipeline_builder.with_batch_exporter(
@@ -281,17 +275,17 @@ impl OpenTelemetry {
                         .with_http_client(reqwest::Client::new())
                         .build()
                         .ok()?,
-                    opentelemetry_sdk::runtime::Tokio,
                 )
             }
         };
 
-        let provider = pipeline_builder.build();
-        opentelemetry::global::set_tracer_provider(provider.clone());
+        // let provider = pipeline_builder.build();
+        // opentelemetry::global::set_tracer_provider(provider.clone());
 
-        Some(Box::new(tracing_opentelemetry::OpenTelemetryLayer::new(
-            provider.tracer(metadata.service.clone()),
-        )))
+        // Some(Box::new(tracing_opentelemetry::OpenTelemetryLayer::new(
+        //     provider.tracer(metadata.service.clone()),
+        // )))
+        Some(pipeline_builder.build())
     }
 
     fn get_protocol(&self) -> OpenTelemetryProtocol {
@@ -305,7 +299,6 @@ impl OpenTelemetry {
 
     fn build_resource(&self, metadata: &crate::Metadata) -> Resource {
         let mut resource_metadata = vec![
-            opentelemetry::KeyValue::new("service.name", metadata.service.clone()),
             opentelemetry::KeyValue::new("service.version", metadata.version.clone()),
             opentelemetry::KeyValue::new("host.os", std::env::consts::OS),
             opentelemetry::KeyValue::new("host.architecture", std::env::consts::ARCH),
@@ -315,7 +308,10 @@ impl OpenTelemetry {
             resource_metadata.push(opentelemetry::KeyValue::new(*key, value.clone()));
         }
 
-        Resource::new(resource_metadata)
+        Resource::builder()
+            .with_service_name(metadata.service.clone())
+            .with_attributes(resource_metadata)
+            .build()
     }
 
     fn build_sampler() -> Sampler {
@@ -382,11 +378,16 @@ impl BatteryBuilder for OpenTelemetry {
                 move |_meta, _ctx| enabled.load(std::sync::atomic::Ordering::Relaxed),
             ));
 
-        if let Some(provider) = self.build_opentelemetry_layer(metadata) {
+        if let Some(provider) = self.build_opentelemetry_provider(metadata) {
+            let layer = Box::new(tracing_opentelemetry::OpenTelemetryLayer::new(
+                provider.tracer(metadata.service.clone()),
+            ));
+            opentelemetry::global::set_tracer_provider(provider.clone());
+
             match self.force_stdout {
                 Some(true) => {
                     registry
-                        .with(provider)
+                        .with(layer)
                         .with(
                             tracing_subscriber::filter::filter_fn(|meta| meta.is_event())
                                 .and_then(tracing_subscriber::fmt::layer()),
@@ -394,9 +395,13 @@ impl BatteryBuilder for OpenTelemetry {
                         .init();
                 }
                 _ => {
-                    registry.with(provider).init();
+                    registry.with(layer).init();
                 }
             }
+
+            Box::new(OpenTelemetryBattery {
+                provider: Some(provider),
+            })
         } else if !matches!(self.force_stdout, Some(false)) {
             registry
                 .with(
@@ -404,17 +409,23 @@ impl BatteryBuilder for OpenTelemetry {
                         .and_then(tracing_subscriber::fmt::layer()),
                 )
                 .init();
-        }
 
-        Box::new(OpenTelemetryBattery {})
+            Box::new(OpenTelemetryBattery { provider: None })
+        } else {
+            Box::new(OpenTelemetryBattery { provider: None })
+        }
     }
 }
 
-struct OpenTelemetryBattery {}
+struct OpenTelemetryBattery {
+    provider: Option<SdkTracerProvider>,
+}
 
 impl Battery for OpenTelemetryBattery {
-    fn shutdown(&self) {
-        opentelemetry::global::shutdown_tracer_provider();
+    fn shutdown(&mut self) {
+        if let Some(provider) = self.provider.take() {
+            let _ = provider.shutdown();
+        }
     }
 
     fn record_error(&self, error: &dyn std::error::Error) {
