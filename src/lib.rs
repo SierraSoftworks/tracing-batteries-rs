@@ -50,7 +50,7 @@ pub trait Battery {
     ///
     /// There is no guarantee that the application will not attempt to use the integration after this
     /// method is called, so if necessary the integration should ensure that it can handle this safely.
-    fn shutdown(&self) {}
+    fn shutdown(&mut self) {}
 }
 
 /// A telemetry session which is used to manage the lifecycle of the telemetry subsystem.
@@ -131,8 +131,8 @@ impl Session {
     /// This method should be called when the application is ready to exit, ensuring that all
     /// telemetry data has been flushed and that all resources have been released. It is a
     /// blocking operation and will not return until all batteries have been shut down.
-    pub fn shutdown(self) {
-        for battery in self.batteries {
+    pub fn shutdown(mut self) {
+        for battery in self.batteries.iter_mut() {
             battery.shutdown();
         }
     }
@@ -247,7 +247,7 @@ mod tests {
     }
 
     impl Battery for ExampleBattery {
-        fn shutdown(&self) {
+        fn shutdown(&mut self) {
             println!("ExampleBattery dropped");
         }
     }
