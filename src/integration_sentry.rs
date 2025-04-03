@@ -10,13 +10,13 @@ struct SentryBattery {
 }
 
 impl Battery for SentryBattery {
+    fn record_error(&self, error: &dyn std::error::Error) {
+        sentry::capture_error(error);
+    }
+
     fn shutdown(&mut self) {
         sentry::end_session_with_status(sentry::protocol::SessionStatus::Exited);
         self.raven.close(None);
-    }
-
-    fn record_error(&self, error: &dyn std::error::Error) {
-        sentry::capture_error(error);
     }
 }
 

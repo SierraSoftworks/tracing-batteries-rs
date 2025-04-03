@@ -2,8 +2,8 @@
 **Easily configure tracing integrations for your Rust applications**
 
 This library has been built to simplify the process of configuring tracing
-integrations for Rust applications, handling the complexity of maintaiing
-all of the various `tracing`, `opentelemetry` and `sentry` API changes that
+integrations for Rust applications, handling the complexity of maintaining
+all the various `tracing`, `opentelemetry` and `sentry` API changes that
 happen in the Rust ecosystem.
 
 The goal here is that you should be able to write your telemetry integration
@@ -19,7 +19,7 @@ The first step here is adding the `tracing-batteries-rs` crate to your
 tracing-batteries = { git = "https://github.com/sierrasoftworks/tracing-batteries-rs.git" }
 ```
 
-**NOTE** I'm opting to use Git here because the goal of this library is to handle all of the
+**NOTE** I'm opting to use Git here because the goal of this library is to handle all the
 continuous updates to the broader `tracing` and `opentelemetry` ecosystems, using Dependabot
 to do so automatically. As such, tracking the `main` branch of this repository is the best way
 (for my own use cases) to handle migrations across the various tools that depend upon this library.
@@ -46,7 +46,7 @@ fn main() {
 ```
 
 ## Integrations
-This library ships with several integration "batteries" which you can easily
+This library ships with some integration "batteries" which you can easily
 add to your `Session` to enable telemetry emission to various backends.
 
 ### OpenTelemetry
@@ -63,7 +63,7 @@ fn main() {
     let session = Session::new("my-service", env!("CARGO_PKG_VERSION"))
         .with_battery(OpenTelemetry::new("https://api.honeycomb.io")
           .with_header("x-honeycomb-team", "your-access-token")
-          .with_default_level(OpenTelemetryLevel::WARN);
+          .with_default_level(OpenTelemetryLevel::WARN));
 
     // tracing_batteries::prelude::info_span is re-exported from tracing to allow you to use it in your code
     info_span!("my-span").in_scope(|| {

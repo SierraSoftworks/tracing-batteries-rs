@@ -324,25 +324,25 @@ impl OpenTelemetry {
 
         std::env::var("OTEL_TRACES_SAMPLER")
             .map(|s| match s.as_str() {
-                "always_on" => opentelemetry_sdk::trace::Sampler::AlwaysOn,
-                "always_off" => opentelemetry_sdk::trace::Sampler::AlwaysOff,
+                "always_on" => Sampler::AlwaysOn,
+                "always_off" => Sampler::AlwaysOff,
                 "traceidratio" => {
-                    opentelemetry_sdk::trace::Sampler::TraceIdRatioBased(get_trace_ratio())
+                    Sampler::TraceIdRatioBased(get_trace_ratio())
                 }
-                "parentbased_always_on" => opentelemetry_sdk::trace::Sampler::ParentBased(
-                    Box::new(opentelemetry_sdk::trace::Sampler::AlwaysOn),
+                "parentbased_always_on" => Sampler::ParentBased(
+                    Box::new(Sampler::AlwaysOn),
                 ),
-                "parentbased_always_off" => opentelemetry_sdk::trace::Sampler::ParentBased(
-                    Box::new(opentelemetry_sdk::trace::Sampler::AlwaysOff),
+                "parentbased_always_off" => Sampler::ParentBased(
+                    Box::new(Sampler::AlwaysOff),
                 ),
                 "parentbased_traceidratio" => {
-                    opentelemetry_sdk::trace::Sampler::ParentBased(Box::new(
-                        opentelemetry_sdk::trace::Sampler::TraceIdRatioBased(get_trace_ratio()),
+                    Sampler::ParentBased(Box::new(
+                        Sampler::TraceIdRatioBased(get_trace_ratio()),
                     ))
                 }
-                _ => opentelemetry_sdk::trace::Sampler::AlwaysOn,
+                _ => Sampler::AlwaysOn,
             })
-            .unwrap_or(opentelemetry_sdk::trace::Sampler::AlwaysOn)
+            .unwrap_or(Sampler::AlwaysOn)
     }
 
     fn build_level(&self) -> OpenTelemetryLevel {
@@ -422,14 +422,14 @@ struct OpenTelemetryBattery {
 }
 
 impl Battery for OpenTelemetryBattery {
+    fn record_error(&self, error: &dyn std::error::Error) {
+        opentelemetry::trace::get_active_span(|span| span.record_error(error))
+    }
+
     fn shutdown(&mut self) {
         if let Some(provider) = self.provider.take() {
             let _ = provider.shutdown();
         }
-    }
-
-    fn record_error(&self, error: &dyn std::error::Error) {
-        opentelemetry::trace::get_active_span(|span| span.record_error(error))
     }
 }
 

@@ -140,7 +140,7 @@ impl Session {
     /// Returns a reference to the [`AtomicBool`] which is used to control the enabled state of the telemetry session.
     ///
     /// This method is intended to be used by the hosting application to either check, or modify, whether the telemetry
-    /// integrations report data to their respective services. The [`AtomicBool`](std::sync::atomic::AtomicBool)
+    /// integrations report data to their respective services. The [`AtomicBool`](AtomicBool)
     /// is used to ensure that the enabled state can be modified safely from multiple threads.
     ///
     /// ## Example
