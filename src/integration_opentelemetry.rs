@@ -272,19 +272,12 @@ impl OpenTelemetry {
                             }
                             tracing_headers
                         })
-                        .with_http_client(reqwest::Client::new())
                         .build()
                         .ok()?,
                 )
             }
         };
 
-        // let provider = pipeline_builder.build();
-        // opentelemetry::global::set_tracer_provider(provider.clone());
-
-        // Some(Box::new(tracing_opentelemetry::OpenTelemetryLayer::new(
-        //     provider.tracer(metadata.service.clone()),
-        // )))
         Some(pipeline_builder.build())
     }
 
