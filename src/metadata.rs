@@ -1,8 +1,8 @@
+use crate::{BatteryBuilder, Session};
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicBool;
-use crate::{BatteryBuilder, Session};
+use std::sync::{Arc, Mutex};
 
 /// Metadata about the service which is being monitored by the telemetry system.
 ///
@@ -44,6 +44,6 @@ impl Metadata {
             page_stack: Mutex::new(Vec::new()),
             enabled: Arc::new(AtomicBool::new(true)),
         }
-            .with_battery(battery)
+        .with_battery(battery)
     }
 }

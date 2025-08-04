@@ -1,13 +1,16 @@
-use std::borrow::Cow;
-use std::cell::RefCell;
-use radix_fmt::radix;
-use rand::random;
-use std::collections::{HashMap, HashSet};
-use std::env::consts::{ARCH, OS};
-use std::sync::{atomic::{AtomicBool, AtomicUsize, Ordering}, Arc, Mutex};
-use std::time::Duration;
 use crate::prelude::*;
 use crate::{Battery, BatteryBuilder, Metadata};
+use radix_fmt::radix;
+use rand::random;
+use std::borrow::Cow;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::env::consts::{ARCH, OS};
+use std::sync::{
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+    Arc, Mutex,
+};
+use std::time::Duration;
 
 /// A [Medama](https://oss.medama.io) integration which can be used to keep
 /// track of application usage in a privacy preserving way.
@@ -224,13 +227,20 @@ impl MedamaAnalyticsBattery {
 
         self.start_time.replace(chrono::Utc::now());
 
-        let mut data: HashMap<String, String> = self.metadata
+        let mut data: HashMap<String, String> = self
+            .metadata
             .context
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
-        data.insert("service.name".to_string(), self.metadata.service.to_string());
-        data.insert("service.version".to_string(), self.metadata.version.to_string());
+        data.insert(
+            "service.name".to_string(),
+            self.metadata.service.to_string(),
+        );
+        data.insert(
+            "service.version".to_string(),
+            self.metadata.version.to_string(),
+        );
 
         let payload = MedamaLoadBeacon {
             b: self.beacon_id.borrow().clone(),

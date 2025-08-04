@@ -1,14 +1,14 @@
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc};
+use std::sync::Arc;
 
+#[cfg(feature = "medama")]
+mod integration_medama;
 #[cfg(feature = "opentelemetry")]
 mod integration_opentelemetry;
 #[cfg(feature = "sentry")]
 mod integration_sentry;
-pub mod prelude;
-#[cfg(feature = "medama")]
-mod integration_medama;
 mod metadata;
+pub mod prelude;
 mod session;
 
 pub use metadata::Metadata;

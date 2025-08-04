@@ -1,8 +1,8 @@
+use crate::{Battery, BatteryBuilder, Metadata};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
-use crate::{Battery, BatteryBuilder, Metadata};
 
 /// A telemetry session which is used to manage the lifecycle of the telemetry subsystem.
 ///
@@ -77,10 +77,7 @@ impl Session {
     /// session.shutdown();
     /// ```
     ///
-    pub fn record_new_page<'a>(
-        &'a self,
-        page: &'a str
-    ) -> PageMarker<'a> {
+    pub fn record_new_page<'a>(&'a self, page: &'a str) -> PageMarker<'a> {
         if let Ok(mut stack) = self.page_stack.lock() {
             stack.push(page.to_string());
         } else {
@@ -177,7 +174,6 @@ impl Session {
         self
     }
 }
-
 
 /// A marker which represents an active page view and which switches back to the previous page when dropped.
 ///
