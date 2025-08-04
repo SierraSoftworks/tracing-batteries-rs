@@ -1,6 +1,5 @@
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
-use std::{borrow::Cow, collections::HashMap};
+use std::sync::{Arc};
 
 #[cfg(feature = "opentelemetry")]
 mod integration_opentelemetry;
