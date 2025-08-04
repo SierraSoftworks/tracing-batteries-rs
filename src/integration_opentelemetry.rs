@@ -77,7 +77,7 @@ impl OpenTelemetry {
     /// use tracing_batteries::{Session, OpenTelemetry};
     ///
     /// let session = Session::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
-    ///  .with_battery(OpenTelemetry::new("localhost:4317"));
+    ///     .with_battery(OpenTelemetry::new("localhost:4317"));
     ///
     /// session.shutdown();
     /// ```
@@ -319,19 +319,11 @@ impl OpenTelemetry {
             .map(|s| match s.as_str() {
                 "always_on" => Sampler::AlwaysOn,
                 "always_off" => Sampler::AlwaysOff,
-                "traceidratio" => {
-                    Sampler::TraceIdRatioBased(get_trace_ratio())
-                }
-                "parentbased_always_on" => Sampler::ParentBased(
-                    Box::new(Sampler::AlwaysOn),
-                ),
-                "parentbased_always_off" => Sampler::ParentBased(
-                    Box::new(Sampler::AlwaysOff),
-                ),
+                "traceidratio" => Sampler::TraceIdRatioBased(get_trace_ratio()),
+                "parentbased_always_on" => Sampler::ParentBased(Box::new(Sampler::AlwaysOn)),
+                "parentbased_always_off" => Sampler::ParentBased(Box::new(Sampler::AlwaysOff)),
                 "parentbased_traceidratio" => {
-                    Sampler::ParentBased(Box::new(
-                        Sampler::TraceIdRatioBased(get_trace_ratio()),
-                    ))
+                    Sampler::ParentBased(Box::new(Sampler::TraceIdRatioBased(get_trace_ratio())))
                 }
                 _ => Sampler::AlwaysOn,
             })

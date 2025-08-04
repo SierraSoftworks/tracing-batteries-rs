@@ -1,4 +1,3 @@
-use tracing::Instrument;
 use tracing_batteries::{OpenTelemetry, OpenTelemetryProtocol, Session};
 
 #[tokio::test]
