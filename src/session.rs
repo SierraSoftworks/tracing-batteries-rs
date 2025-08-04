@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 pub struct Session {
     pub(crate) metadata: Metadata,
     pub(crate) batteries: Vec<Box<dyn Battery>>,
-    pub(crate) page_stack: Mutex<Vec<String>>,
+    pub(crate) page_stack: Mutex<Vec<Cow<'static, str>>>,
     pub(crate) enabled: Arc<AtomicBool>,
 }
 
@@ -62,30 +62,32 @@ impl Session {
     ///
     /// ## Example
     /// ```no_run
-    /// use tracing_batteries::{Session, Medama};
+    /// use tracing_batteries::{Session, Sentry};
     ///
     /// let session = Session::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
-    ///     .with_battery(Medama::new("https://example.com"));
+    ///     .with_battery(Sentry::new("https://username:password@ingest.sentry.io/project"));
     /// {
-    ///     let _page = session.record_new_page("home");
+    ///     let _page = session.record_new_page("/home");
     /// }
     ///
     /// {
-    ///     let _page = session.record_new_page("settings");
+    ///     let _page = session.record_new_page("/settings");
     /// }
     ///
     /// session.shutdown();
     /// ```
     ///
-    pub fn record_new_page<'a>(&'a self, page: &'a str) -> PageMarker<'a> {
+    pub fn record_new_page<'a, P: Into<Cow<'static, str>>>(&'a self, page: P) -> PageMarker<'a> {
+        let page = page.into();
         if let Ok(mut stack) = self.page_stack.lock() {
-            stack.push(page.to_string());
+            stack.push(page.clone());
         } else {
             tracing::warn!("Failed to lock page stack, unable to record new page");
         }
 
+
         for battery in self.batteries.iter() {
-            battery.record_new_page(page);
+            battery.record_new_page(page.clone());
         }
 
         PageMarker(self)
@@ -186,7 +188,7 @@ impl Drop for PageMarker<'_> {
         if let Ok(mut stack) = self.0.page_stack.lock() {
             let last_page = stack.pop();
             for battery in self.0.batteries.iter() {
-                battery.record_new_page(last_page.as_deref().unwrap_or_default());
+                battery.record_new_page(last_page.clone().unwrap_or_default());
             }
         } else {
             tracing::warn!("Failed to lock page stack, unable to drop page marker");

@@ -154,10 +154,10 @@ struct MedamaAnalyticsBattery {
 }
 
 impl Battery for MedamaAnalyticsBattery {
-    fn record_new_page<'a>(&self, page: &'a str) {
+    fn record_new_page<'a>(&self, page: Cow<'static, str>) {
         self.send_unload_beacon();
         self.beacon_id.replace(Self::generate_beacon_id());
-        self.send_load_beacon(page);
+        self.send_load_beacon(&page);
     }
 
     fn record_error(&self, error: &dyn std::error::Error) {

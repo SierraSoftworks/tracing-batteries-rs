@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -53,7 +54,7 @@ pub trait Battery {
     /// to report that a new page view has started (and finish any existing page views which are
     /// currently active). Only one page view can be active at a time, so this method should
     /// finish the previous page view before starting a new one.
-    fn record_new_page<'a>(&self, _page: &'a str) {}
+    fn record_new_page<'a>(&self, _page: Cow<'static, str>) {}
 
     /// Called whenever the [`Session::record_error`] method is called, allowing the integration
     /// to report an error to the telemetry system through the appropriate mechanism.
