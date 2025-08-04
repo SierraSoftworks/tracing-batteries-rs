@@ -1,0 +1,199 @@
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
+use crate::{Battery, BatteryBuilder, Metadata};
+
+/// A telemetry session which is used to manage the lifecycle of the telemetry subsystem.
+///
+/// The session is the primary entrypoint for this library and maintains a list of batteries
+/// which have been initialized, as well as metadata about the service that is being monitored.
+///
+/// You can attach new batteries to the service at any time, however it is expected that these
+/// are attached at the beginning of the application's lifecycle and the session is retained until
+/// the application is ready to exit.
+pub struct Session {
+    pub(crate) metadata: Metadata,
+    pub(crate) batteries: Vec<Box<dyn Battery>>,
+    pub(crate) page_stack: Mutex<Vec<String>>,
+    pub(crate) enabled: Arc<AtomicBool>,
+}
+
+impl Session {
+    /// Starts the process of initializing a new telemetry session for the provided application.
+    ///
+    /// The `service` and `version` parameters should be used to identify the service which is being monitored,
+    /// it is common to use the `env!("CARGO_PKG_NAME")` and `env!("CARGO_PKG_VERSION")` macros to provide this information.
+    ///
+    /// This method returns a [`Metadata`] object which may be modified until such time as a battery is attached to the session,
+    /// at which point the session will be locked and only additional batteries may be added.
+    ///
+    /// ## Example
+    /// ```no_run
+    /// use tracing_batteries::{Session, Sentry};
+    ///
+    /// let session = Session::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
+    ///   .with_context("example", "yes")
+    ///   .with_battery(Sentry::new("https://yourdsn@sentry.example.com/app-id"));
+    /// ```
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new<S: Into<Cow<'static, str>>, V: Into<Cow<'static, str>>>(
+        service: S,
+        version: V,
+    ) -> Metadata {
+        Metadata {
+            service: service.into(),
+            version: version.into(),
+            context: HashMap::new(),
+        }
+    }
+
+    /// Records a new page view within the telemetry session, reporting it to any registered batteries.
+    ///
+    /// This method should be called whenever a new page view is started within the application,
+    /// allowing the telemetry system to track page views and their associated data. It will return
+    /// a [`PageMarker`] which represents the active page view, and which will automatically switch
+    /// back to the previous page when it is dropped.
+    ///
+    /// Only one page view can be active at a time, so this method will finish the previous page view
+    /// before starting a new one. Note that you must drop the [`PageMarker`] before you will be able
+    /// to call [`Session::record_new_page`] again to start a new page view, or [`Session::shutdown`]
+    /// to end the session.
+    ///
+    /// ## Example
+    /// ```no_run
+    /// use tracing_batteries::{Session, Medama};
+    ///
+    /// let session = Session::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
+    ///     .with_battery(Medama::new("https://example.com"));
+    /// {
+    ///     let _page = session.record_new_page("home");
+    /// }
+    ///
+    /// {
+    ///     let _page = session.record_new_page("settings");
+    /// }
+    ///
+    /// session.shutdown();
+    /// ```
+    ///
+    pub fn record_new_page<'a>(
+        &'a self,
+        page: &'a str
+    ) -> PageMarker<'a> {
+        if let Ok(mut stack) = self.page_stack.lock() {
+            stack.push(page.to_string());
+        } else {
+            tracing::warn!("Failed to lock page stack, unable to record new page");
+        }
+
+        for battery in self.batteries.iter() {
+            battery.record_new_page(page);
+        }
+
+        PageMarker(self)
+    }
+
+    /// Records that an error has occurred within the application, reporting it to any registered batteries.
+    ///
+    /// This method may be called to explicitly report an error within the application to your
+    /// telemetry services. It is most commonly used to report errors which are not otherwise
+    /// captured by the telemetry system, such as errors which are caught and handled by the application's
+    /// `main()` function.
+    ///
+    /// For ease of usage, this function returns the error which was passed to it, allowing it to be used
+    /// inline with other error handling code.
+    ///
+    /// ## Example
+    /// ```no_run
+    /// use tracing_batteries::{Session, Sentry};
+    ///
+    /// let session = Session::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
+    ///   .with_battery(Sentry::new("https://yourdsn@sentry.example.com"));
+    ///
+    /// match std::fs::read_to_string("nonexistent-file.txt") {
+    ///  Ok(_) => {}
+    ///  Err(e) => eprintln!("{:?}", session.record_error(&e)),
+    /// }
+    /// ```
+    pub fn record_error<'a, E: std::error::Error>(&self, exception: &'a E) -> &'a E {
+        for battery in &self.batteries {
+            battery.record_error(exception);
+        }
+
+        exception
+    }
+
+    /// Shuts down the telemetry session, ensuring that all batteries are properly cleaned up.
+    ///
+    /// This method should be called when the application is ready to exit, ensuring that all
+    /// telemetry data has been flushed and that all resources have been released. It is a
+    /// blocking operation and will not return until all batteries have been shut down.
+    pub fn shutdown(mut self) {
+        for battery in self.batteries.iter_mut() {
+            battery.shutdown();
+        }
+    }
+
+    /// Returns a reference to the [`AtomicBool`] which is used to control the enabled state of the telemetry session.
+    ///
+    /// This method is intended to be used by the hosting application to either check, or modify, whether the telemetry
+    /// integrations report data to their respective services. The [`AtomicBool`](AtomicBool)
+    /// is used to ensure that the enabled state can be modified safely from multiple threads.
+    ///
+    /// ## Example
+    /// ```rust
+    /// use tracing_batteries::Session;
+    /// use std::sync::atomic::Ordering;
+    ///
+    /// # use std::sync::{Arc, atomic::AtomicBool};
+    /// # use tracing_batteries::{Metadata, BatteryBuilder, Battery};
+    /// # struct MockBattery;
+    /// # impl Battery for MockBattery {}
+    /// # impl BatteryBuilder for MockBattery {
+    /// #    fn setup(self, _metadata: &Metadata, _enabled: Arc<AtomicBool>) -> Box<dyn Battery> {
+    /// #       Box::new(MockBattery)
+    /// #    }
+    /// # }
+    /// let session = Session::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
+    ///   .with_battery(MockBattery);
+    ///
+    /// let telemetry_enabled = session.enable();
+    /// telemetry_enabled.store(false, Ordering::Relaxed);
+    ///
+    /// session.shutdown();
+    /// ```
+    pub fn enable(&self) -> Arc<AtomicBool> {
+        self.enabled.clone()
+    }
+}
+
+impl Session {
+    /// Attaches a new battery to the telemetry session, integrating the requested telemetry
+    /// provider into the application.
+    pub fn with_battery<B: BatteryBuilder>(mut self, builder: B) -> Self {
+        let battery = builder.setup(&self.metadata, self.enabled.clone());
+        self.batteries.push(battery);
+        self
+    }
+}
+
+
+/// A marker which represents an active page view and which switches back to the previous page when dropped.
+///
+/// This marker is used to ensure that the page view is properly closed when the scope ends,
+/// allowing the telemetry system to report the end of the page view and any associated data.
+pub struct PageMarker<'a>(pub(crate) &'a Session);
+
+impl Drop for PageMarker<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut stack) = self.0.page_stack.lock() {
+            let last_page = stack.pop();
+            for battery in self.0.batteries.iter() {
+                battery.record_new_page(last_page.as_deref().unwrap_or_default());
+            }
+        } else {
+            tracing::warn!("Failed to lock page stack, unable to drop page marker");
+        }
+    }
+}

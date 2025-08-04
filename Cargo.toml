@@ -43,7 +43,7 @@ tracing-subscriber = { version = "0.3.19", features = ["tracing-log"] }
 tokio = { version = "1.47.1", features = ["full"] }
 
 [features]
-default = ["opentelemetry", "sentry"]
+default = ["medama", "opentelemetry", "sentry"]
 sentry = ["dep:sentry"]
 opentelemetry = [
   "dep:opentelemetry",
