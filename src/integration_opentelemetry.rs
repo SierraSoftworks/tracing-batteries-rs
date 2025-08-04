@@ -77,7 +77,7 @@ impl OpenTelemetry {
     /// use tracing_batteries::{Session, OpenTelemetry};
     ///
     /// let session = Session::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
-    ///  .with_battery(OpenTelemetry::new("localhost:4317"));
+    ///     .with_battery(OpenTelemetry::new("localhost:4317"));
     ///
     /// session.shutdown();
     /// ```

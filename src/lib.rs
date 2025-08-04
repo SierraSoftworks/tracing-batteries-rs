@@ -7,7 +7,11 @@ mod integration_opentelemetry;
 #[cfg(feature = "sentry")]
 mod integration_sentry;
 pub mod prelude;
+#[cfg(feature = "medama")]
+mod integration_medama;
 
+#[cfg(feature = "medama")]
+pub use integration_medama::*;
 #[cfg(feature = "opentelemetry")]
 pub use integration_opentelemetry::*;
 #[cfg(feature = "sentry")]

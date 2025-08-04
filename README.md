@@ -29,11 +29,12 @@ your own fork with a lower update cadence.
 Then you'll want to add the tracing initialization to your application.
 
 ```rust
-use tracing_batteries::{Session, Sentry, OpenTelemetry, OpenTelemetryProtocol};
+use tracing_batteries::{Session, Medama, Sentry, OpenTelemetry, OpenTelemetryProtocol};
 
 fn main() {
     let session = Session::new("my-service", env!("CARGO_PKG_VERSION"))
         .with_context("environment", "production")
+        .with_battery(Medama::new("https://medama.example.com"))
         .with_battery(Sentry::new("https://username@password.ingest.sentry.io/project"))
         .with_battery(OpenTelemetry::new("https://api.honeycomb.io")
           .with_protocol(OpenTelemetryProtocol::HttpJson)
@@ -48,6 +49,27 @@ fn main() {
 ## Integrations
 This library ships with some integration "batteries" which you can easily
 add to your `Session` to enable telemetry emission to various backends.
+
+### Medama
+The `Medama` integration allows you to send telemetry data to a self-hosted [Medama](https://oss.medama.io)
+privacy preserving analytics server. This will track application execution as page views, and
+errors as events.
+
+**NOTE** You will need to ensure that the `medama` feature is enabled, it is **NOT** enabled by default.
+
+```rust
+use tracing_batteries::{Session, Medama};
+use tracing_batteries::prelude::*;
+
+fn main() {
+    let session = Session::new("my-service", env!("CARGO_PKG_VERSION"))
+        .with_battery(Medama::new("https://medama.example.com"));
+    
+    // Your app code goes here
+
+    session.shutdown();
+}
+```
 
 ### OpenTelemetry
 The `OpenTelemetry` integration allows you to send telemetry data from the `tracing` crate
