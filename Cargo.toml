@@ -29,7 +29,7 @@ sentry = { version = "0.42", default-features = false, optional = true, features
   "log",
   "rustls",
 ] }
-serde = { version = "1.0.215", features = ["derive"], optional = true }
+serde = { version = "1.0.219", features = ["derive"], optional = true }
 sys-locale = { version = "0.3.2", optional = true }
 tokio = { version = "1.47.1", optional = true }
 tonic = { version = "0.12.3", features = ["tls-roots"], optional = true }
