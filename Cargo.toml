@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 chrono = { version = "0.4.41", optional = true }
+hex = { version = "0.4.3", optional = true }
 iana-time-zone = { version = "0.1.63", optional = true }
 opentelemetry = { version = "0.29.1", optional = true }
 opentelemetry_sdk = { version = "0.29.0", features = [
@@ -30,6 +31,7 @@ sentry = { version = "0.42", default-features = false, optional = true, features
   "rustls",
 ] }
 serde = { version = "1.0.219", features = ["derive"], optional = true }
+sha2 = { version = "0.10.9", optional = true }
 sys-locale = { version = "0.3.2", optional = true }
 tokio = { version = "1.47.1", optional = true }
 tonic = { version = "0.12.3", features = ["tls-roots"], optional = true }
@@ -38,14 +40,12 @@ tracing-attributes = { git = "https://github.com/SierraSoftworks/tracing.git" }
 tracing-futures = { version = "0.2.5", features = ["futures-03"] }
 tracing-opentelemetry = { version = "0.30", optional = true }
 tracing-subscriber = { version = "0.3.19", features = ["tracing-log"] }
-sha2 = "0.10.9"
-hex = "0.4.3"
 
 [dev-dependencies]
 tokio = { version = "1.47.1", features = ["full"] }
 
 [features]
-default = ["medama", "opentelemetry", "sentry"]
+default = ["opentelemetry", "sentry"]
 sentry = ["dep:sentry"]
 opentelemetry = [
   "dep:opentelemetry",
@@ -56,10 +56,12 @@ opentelemetry = [
 ]
 medama = [
   "dep:chrono",
+  "dep:hex",
   "dep:iana-time-zone",
   "dep:radix_fmt",
   "dep:rand",
   "dep:serde",
+  "dep:sha2",
   "dep:sys-locale",
-  "dep:tokio"
+  "dep:tokio",
 ]
