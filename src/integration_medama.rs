@@ -1,7 +1,9 @@
 use crate::prelude::*;
 use crate::{Battery, BatteryBuilder, Metadata};
+use chrono::NaiveDate;
 use radix_fmt::radix;
 use rand::random;
+use sha2::Digest;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -121,6 +123,7 @@ impl BatteryBuilder for Medama {
             beacon_id: RefCell::new(MedamaAnalyticsBattery::generate_beacon_id()),
             start_time: RefCell::new(chrono::Utc::now()),
             visited_pages: Mutex::new(HashSet::new()),
+            unique_user_tracker: UniqueUserTracker::new(metadata.service.clone()),
 
             is_enabled: enabled,
             outstanding_requests: Arc::new(AtomicUsize::new(0)),
@@ -146,6 +149,7 @@ struct MedamaAnalyticsBattery {
     beacon_id: RefCell<String>,
     start_time: RefCell<chrono::DateTime<chrono::Utc>>,
     visited_pages: Mutex<HashSet<String>>,
+    unique_user_tracker: UniqueUserTracker,
 
     // Request management
     is_enabled: Arc<AtomicBool>,
@@ -215,14 +219,14 @@ impl MedamaAnalyticsBattery {
     }
 
     fn send_load_beacon(&self, page: &str) {
-        let (is_unique, is_visited) = if let Ok(mut visited_pages) = self.visited_pages.lock() {
-            let is_unique = visited_pages.is_empty();
+        let is_unique = self.unique_user_tracker.is_unique_user();
+        let is_visited = if let Ok(mut visited_pages) = self.visited_pages.lock() {
             let is_visited = visited_pages.contains(page);
             visited_pages.insert(page.to_string());
-            (is_unique, is_visited)
+            is_visited
         } else {
             tracing::warn!("Failed to acquire lock on visited pages");
-            (false, false)
+            false
         };
 
         self.start_time.replace(chrono::Utc::now());
@@ -372,8 +376,69 @@ struct MedamaCustomEvent {
     pub d: HashMap<String, String>,
 }
 
+struct UniqueUserTracker {
+    service_name: String,
+}
+
+impl UniqueUserTracker {
+    pub fn new<S: ToString>(service_name: S) -> Self {
+        Self {
+            service_name: service_name.to_string(),
+        }
+    }
+
+    pub fn is_unique_user(&self) -> bool {
+        let start_of_day: NaiveDate = chrono::Utc::now().date_naive();
+
+        match self.get_last_touched() {
+            Some(last_touched) if last_touched >= start_of_day => {
+                // User has already been touched today, not unique
+                false
+            }
+            _ => {
+                self.touch_unique_marker();
+                true
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub fn reset(&self) {
+        let marker_file = self.get_marker_file();
+        let _ = std::fs::remove_file(marker_file);
+    }
+
+    fn get_marker_file(&self) -> std::path::PathBuf {
+        // Generates a truncated sha256 hash of the service name
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(&self.service_name);
+        let result = hasher.finalize();
+        let file_name = hex::encode(&result[..8]); // Use the first 8 bytes for uniqueness
+
+        std::env::temp_dir().join(format!("medama-unique-user-{}", file_name))
+    }
+
+    fn touch_unique_marker(&self) {
+        let marker_file = self.get_marker_file();
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(marker_file);
+    }
+
+    fn get_last_touched(&self) -> Option<NaiveDate> {
+        let marker_file = self.get_marker_file();
+        if let Ok(metadata) = std::fs::metadata(marker_file) {
+            let modified_time: chrono::DateTime<chrono::Utc> = metadata.modified().ok()?.into();
+            return Some(modified_time.date_naive());
+        }
+        None
+    }
+}
+
 #[cfg(test)]
 mod test {
+    use super::*;
     use crate::*;
 
     #[tokio::test]
@@ -389,5 +454,33 @@ mod test {
         }
 
         session.shutdown();
+    }
+
+    #[test]
+    fn test_unique_user_tracker() {
+        let tracker = UniqueUserTracker::new("test_service");
+        let tracker2 = UniqueUserTracker::new("test_service");
+        let tracker3 = UniqueUserTracker::new("another_service");
+        tracker.reset();
+        tracker3.reset();
+
+        assert!(
+            tracker.is_unique_user(),
+            "the first call should result in a unique user"
+        );
+        assert!(
+            !tracker.is_unique_user(),
+            "the second call should not result in a unique user"
+        );
+
+        assert!(
+            !tracker2.is_unique_user(),
+            "the state should propagate across trackers"
+        );
+
+        assert!(
+            tracker3.is_unique_user(),
+            "the state should not propagate across different services"
+        );
     }
 }
