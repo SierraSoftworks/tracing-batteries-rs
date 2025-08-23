@@ -420,10 +420,9 @@ impl UniqueUserTracker {
 
     fn touch_unique_marker(&self) {
         let marker_file = self.get_marker_file();
-        let _ = std::fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .open(marker_file);
+        if let Ok(file) = std::fs::File::create(&marker_file) {
+            file.set_modified(std::time::SystemTime::now()).ok();
+        }
     }
 
     fn get_last_touched(&self) -> Option<NaiveDate> {
