@@ -39,7 +39,7 @@ tracing = { version = "0.1.41", features = ["log"] }
 tracing-attributes = { git = "https://github.com/SierraSoftworks/tracing.git" }
 tracing-futures = { version = "0.2.5", features = ["futures-03"] }
 tracing-opentelemetry = { version = "0.30", optional = true }
-tracing-subscriber = { version = "0.3.19", features = ["tracing-log"] }
+tracing-subscriber = { version = "0.3.20", features = ["tracing-log"] }
 
 [dev-dependencies]
 tokio = { version = "1.47.1", features = ["full"] }
