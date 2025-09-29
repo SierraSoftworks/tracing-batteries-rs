@@ -30,7 +30,7 @@ sentry = { version = "0.43", default-features = false, optional = true, features
   "log",
   "rustls",
 ] }
-serde = { version = "1.0.227", features = ["derive"], optional = true }
+serde = { version = "1.0.228", features = ["derive"], optional = true }
 sha2 = { version = "0.10.9", optional = true }
 sys-locale = { version = "0.3.2", optional = true }
 tokio = { version = "1.47.1", optional = true }
