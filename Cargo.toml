@@ -15,6 +15,7 @@ opentelemetry-otlp = { version = "0.31.0", features = [
   "http-json",
   "http-proto",
   "grpc-tonic",
+  "tls",
   "reqwest-rustls-webpki-roots",
 ], optional = true }
 radix_fmt = { version = "1.0.0", optional = true }

@@ -237,6 +237,9 @@ impl OpenTelemetry {
             OpenTelemetryProtocol::Grpc => pipeline_builder.with_batch_exporter(
                 opentelemetry_otlp::SpanExporter::builder()
                     .with_tonic()
+                    .with_tls_config(tonic::transport::ClientTlsConfig::new()
+                        .with_native_roots()
+                        .with_webpki_roots())
                     .with_endpoint(self.endpoint.clone())
                     .with_metadata({
                         let mut tracing_metadata = tonic::metadata::MetadataMap::new();
