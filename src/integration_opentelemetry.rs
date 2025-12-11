@@ -60,6 +60,7 @@ pub struct OpenTelemetry {
     headers: HashMap<Cow<'static, str>, Cow<'static, str>>,
     protocol: Option<OpenTelemetryProtocol>,
     sampler: OpenTelemetrySampler,
+    use_log_events: bool,
     default_level: Option<OpenTelemetryLevel>,
     force_stdout: Option<bool>,
 }
@@ -100,6 +101,7 @@ impl OpenTelemetry {
             protocol: None,
             sampler: Self::build_sampler(),
             default_level: None,
+            use_log_events: false,
             force_stdout: None,
         }
     }
@@ -218,6 +220,24 @@ impl OpenTelemetry {
             force_stdout: Some(stdout),
             ..self
         }
+    }
+
+    /// Configures the OpenTelemetry integration to record log entries as events instead of logs.
+    /// 
+    /// By default, the OpenTelemetry integration will not record log events as OpenTelemetry log entries.
+    /// This method can be used to enable recording log events as OpenTelemetry span events instead,
+    /// which can be useful if your tooling doesn't enable easy association of logs and spans.
+    /// 
+    /// ## Example
+    /// ```rust
+    /// use tracing_batteries::OpenTelemetry;
+    /// 
+    /// OpenTelemetry::new("localhost:4317")
+    ///  .with_log_events();
+    /// ```
+    pub fn with_log_events(mut self) -> Self {
+        self.use_log_events = true;
+        self
     }
 
     fn build_opentelemetry_providers(
@@ -431,19 +451,26 @@ impl BatteryBuilder for OpenTelemetry {
                 &logs_provider,
             ));
 
-            match self.force_stdout {
-                Some(true) => {
+            let registry = registry.with(tracer_layer);
+
+            match (self.use_log_events, self.force_stdout) {
+                (true, Some(true)) => {
                     registry
-                        .with(tracer_layer)
+                        .with(self.build_stdout_layer())  
+                        .init();
+                }
+                (true, _) => {
+                    registry
                         .with(logging_layer)
+                        .init();
+                },
+                (false, Some(true)) => {
+                    registry
                         .with(self.build_stdout_layer())  
                         .init();
                 }
                 _ => {
-                    registry
-                        .with(tracer_layer)
-                        .with(logging_layer)
-                        .init();
+                    registry.init();
                 }
             }
 
