@@ -125,6 +125,7 @@ impl BatteryBuilder for Sentry {
             Some(release) => Some(release),
             None => Some(format!("{}@{}", metadata.service, metadata.version).into()),
         };
+        config.session_mode = sentry::SessionMode::Application;
 
         config.before_send = match config.before_send {
             Some(before_send) => Some(Arc::new(Box::new(

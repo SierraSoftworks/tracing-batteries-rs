@@ -346,6 +346,11 @@ impl OpenTelemetry {
             _ => self.default_level.unwrap_or(OpenTelemetryLevel::INFO),
         }
     }
+
+    fn build_stdout_layer<S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>>(&self) -> impl Layer<S> {
+        tracing_subscriber::filter::filter_fn(|meta| meta.is_event())
+            .and_then(tracing_subscriber::fmt::layer())
+    }
 }
 
 impl BatteryBuilder for OpenTelemetry {
@@ -376,10 +381,7 @@ impl BatteryBuilder for OpenTelemetry {
                 Some(true) => {
                     registry
                         .with(layer)
-                        .with(
-                            tracing_subscriber::filter::filter_fn(|meta| meta.is_event())
-                                .and_then(tracing_subscriber::fmt::layer()),
-                        )
+                        .with(self.build_stdout_layer())  
                         .init();
                 }
                 _ => {
@@ -392,10 +394,7 @@ impl BatteryBuilder for OpenTelemetry {
             })
         } else if !matches!(self.force_stdout, Some(false)) {
             registry
-                .with(
-                    tracing_subscriber::filter::filter_fn(|meta| meta.is_event())
-                        .and_then(tracing_subscriber::fmt::layer()),
-                )
+                .with(self.build_stdout_layer())
                 .init();
 
             Box::new(OpenTelemetryBattery { provider: None })
