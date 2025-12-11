@@ -398,8 +398,7 @@ impl OpenTelemetry {
     }
 
     fn build_stdout_layer<S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>>(&self) -> impl Layer<S> {
-        tracing_subscriber::filter::filter_fn(|meta| meta.is_event())
-            .and_then(tracing_subscriber::fmt::layer())
+        tracing_subscriber::fmt::layer()
     }
 }
 
