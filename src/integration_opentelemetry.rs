@@ -1,14 +1,13 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{Arc, atomic::AtomicBool}, time::Duration,
 };
 
 use opentelemetry::trace::TracerProvider;
 use opentelemetry_otlp::{WithExportConfig, WithHttpConfig, WithTonicConfig};
 use opentelemetry_sdk::{
-    trace::{Sampler, SdkTracerProvider},
-    Resource,
+    Resource, logs::SdkLoggerProvider, trace::{Sampler, SdkTracerProvider}
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
@@ -221,20 +220,20 @@ impl OpenTelemetry {
         }
     }
 
-    fn build_opentelemetry_provider(
+    fn build_opentelemetry_providers(
         &self,
         metadata: &crate::Metadata,
-    ) -> Option<SdkTracerProvider> {
+    ) -> Option<(SdkTracerProvider, SdkLoggerProvider)> {
         if self.endpoint.is_empty() {
             return None;
         }
 
-        let pipeline_builder = opentelemetry_sdk::trace::TracerProviderBuilder::default()
+        let tracer_builder = opentelemetry_sdk::trace::TracerProviderBuilder::default()
             .with_resource(self.build_resource(metadata))
             .with_sampler(self.sampler.clone());
 
-        let pipeline_builder = match self.get_protocol() {
-            OpenTelemetryProtocol::Grpc => pipeline_builder.with_batch_exporter(
+        let tracer_builder = match self.get_protocol() {
+            OpenTelemetryProtocol::Grpc => tracer_builder.with_batch_exporter(
                 opentelemetry_otlp::SpanExporter::builder()
                     .with_tonic()
                     .with_tls_config(tonic::transport::ClientTlsConfig::new()
@@ -263,7 +262,7 @@ impl OpenTelemetry {
                     .ok()?,
             ),
             proto @ (OpenTelemetryProtocol::HttpBinary | OpenTelemetryProtocol::HttpJson) => {
-                pipeline_builder.with_batch_exporter(
+                tracer_builder.with_batch_exporter(
                     opentelemetry_otlp::SpanExporter::builder()
                         .with_http()
                         .with_protocol(proto)
@@ -281,7 +280,58 @@ impl OpenTelemetry {
             }
         };
 
-        Some(pipeline_builder.build())
+        let logger_builder = opentelemetry_sdk::logs::LoggerProviderBuilder::default()
+            .with_resource(self.build_resource(metadata));
+
+        let logger_builder = match self.get_protocol() {
+            OpenTelemetryProtocol::Grpc => logger_builder.with_batch_exporter(
+                opentelemetry_otlp::LogExporter::builder()
+                    .with_tonic()
+                    .with_tls_config(tonic::transport::ClientTlsConfig::new()
+                        .with_native_roots()
+                        .with_webpki_roots())
+                    .with_endpoint(self.endpoint.clone())
+                    .with_metadata({
+                        let mut tracing_metadata = tonic::metadata::MetadataMap::new();
+                        for (key, value) in self.headers.iter() {
+                            if let (key, Ok(value)) = (
+                                key.parse().unwrap_or_else(|_| {
+                                    tonic::metadata::MetadataKey::from_static(
+                                        KEY_NOT_PARSED_PLACEHOLDER,
+                                    )
+                                }),
+                                value.to_string().parse(),
+                            ) {
+                                if key.as_str() != KEY_NOT_PARSED_PLACEHOLDER {
+                                    tracing_metadata.insert(key, value);
+                                }
+                            }
+                        }
+                        tracing_metadata
+                    })
+                    .build()
+                    .ok()?,
+            ),
+            proto @ (OpenTelemetryProtocol::HttpBinary | OpenTelemetryProtocol::HttpJson) => {
+                logger_builder.with_batch_exporter(
+                    opentelemetry_otlp::LogExporter::builder()
+                        .with_http()
+                        .with_protocol(proto)
+                        .with_endpoint(format!("{}/v1/logs", self.endpoint))
+                        .with_headers({
+                            let mut tracing_headers = HashMap::new();
+                            for (key, value) in self.headers.iter() {
+                                tracing_headers.insert(key.to_string(), value.to_string());
+                            }
+                            tracing_headers
+                        })
+                        .build()
+                        .ok()?,
+                )
+            }
+        };
+
+        Some((tracer_builder.build(), logger_builder.build()))
     }
 
     fn get_protocol(&self) -> OpenTelemetryProtocol {
@@ -371,41 +421,53 @@ impl BatteryBuilder for OpenTelemetry {
                 move |_meta, _ctx| enabled.load(std::sync::atomic::Ordering::Relaxed),
             ));
 
-        if let Some(provider) = self.build_opentelemetry_provider(metadata) {
-            let layer = Box::new(tracing_opentelemetry::OpenTelemetryLayer::new(
-                provider.tracer(metadata.service.clone()),
+        if let Some((tracer_provider, logs_provider)) = self.build_opentelemetry_providers(metadata) {
+            opentelemetry::global::set_tracer_provider(tracer_provider.clone());
+            
+            let tracer_layer = Box::new(tracing_opentelemetry::OpenTelemetryLayer::new(
+                tracer_provider.tracer(metadata.service.clone()),
             ));
-            opentelemetry::global::set_tracer_provider(provider.clone());
+            
+            let logging_layer = Box::new(opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(
+                &logs_provider,
+            ));
 
             match self.force_stdout {
                 Some(true) => {
                     registry
-                        .with(layer)
+                        .with(tracer_layer)
+                        .with(logging_layer)
                         .with(self.build_stdout_layer())  
                         .init();
                 }
                 _ => {
-                    registry.with(layer).init();
+                    registry
+                        .with(tracer_layer)
+                        .with(logging_layer)
+                        .init();
                 }
             }
 
             Box::new(OpenTelemetryBattery {
-                provider: Some(provider),
+                tracer_provider: Some(tracer_provider),
+                logger_provider: Some(logs_provider),
             })
         } else if !matches!(self.force_stdout, Some(false)) {
             registry
                 .with(self.build_stdout_layer())
                 .init();
 
-            Box::new(OpenTelemetryBattery { provider: None })
+            Box::new(OpenTelemetryBattery::default())
         } else {
-            Box::new(OpenTelemetryBattery { provider: None })
+            Box::new(OpenTelemetryBattery::default())
         }
     }
 }
 
+#[derive(Default)]
 struct OpenTelemetryBattery {
-    provider: Option<SdkTracerProvider>,
+    tracer_provider: Option<SdkTracerProvider>,
+    logger_provider: Option<SdkLoggerProvider>,
 }
 
 impl Battery for OpenTelemetryBattery {
@@ -414,8 +476,11 @@ impl Battery for OpenTelemetryBattery {
     }
 
     fn shutdown(&mut self) {
-        if let Some(provider) = self.provider.take() {
-            let _ = provider.shutdown();
+        if let Some(provider) = self.tracer_provider.take() {
+            let _ = provider.shutdown_with_timeout(Duration::from_secs(2));
+        }
+        if let Some(provider) = self.logger_provider.take() {
+            let _ = provider.shutdown_with_timeout(Duration::from_secs(2));
         }
     }
 }
