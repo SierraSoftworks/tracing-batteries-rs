@@ -20,7 +20,7 @@ opentelemetry-otlp = { version = "0.31.0", features = [
 ], optional = true }
 radix_fmt = { version = "1.0.0", optional = true }
 rand = { version = "0.9.2", optional = true }
-reqwest = { version = "0.12.25", default-features = false, features = [
+reqwest = { version = "0.12.26", default-features = false, features = [
   "brotli",
   "http2",
   "rustls-tls",
