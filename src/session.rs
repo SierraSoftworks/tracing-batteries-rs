@@ -85,7 +85,6 @@ impl Session {
             tracing::warn!("Failed to lock page stack, unable to record new page");
         }
 
-
         for battery in self.batteries.iter() {
             battery.record_new_page(page.clone());
         }
