@@ -9,8 +9,8 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::env::consts::{ARCH, OS};
 use std::sync::{
-    atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc, Mutex,
+    atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 use std::time::Duration;
 

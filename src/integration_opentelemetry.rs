@@ -1,15 +1,18 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
-    sync::{Arc, atomic::AtomicBool}, time::Duration,
+    sync::{Arc, atomic::AtomicBool},
+    time::Duration,
 };
 
 use opentelemetry::trace::TracerProvider;
 use opentelemetry_otlp::{WithExportConfig, WithHttpConfig, WithTonicConfig};
 use opentelemetry_sdk::{
-    Resource, logs::SdkLoggerProvider, trace::{Sampler, SdkTracerProvider}
+    Resource,
+    logs::SdkLoggerProvider,
+    trace::{Sampler, SdkTracerProvider},
 };
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
+use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{Battery, BatteryBuilder};
 pub use opentelemetry_otlp::Protocol as OpenTelemetryProtocol;
@@ -223,15 +226,15 @@ impl OpenTelemetry {
     }
 
     /// Configures the OpenTelemetry integration to record log entries as events instead of logs.
-    /// 
+    ///
     /// By default, the OpenTelemetry integration will not record log events as OpenTelemetry log entries.
     /// This method can be used to enable recording log events as OpenTelemetry span events instead,
     /// which can be useful if your tooling doesn't enable easy association of logs and spans.
-    /// 
+    ///
     /// ## Example
     /// ```rust
     /// use tracing_batteries::OpenTelemetry;
-    /// 
+    ///
     /// OpenTelemetry::new("localhost:4317")
     ///  .with_log_events();
     /// ```
@@ -256,9 +259,11 @@ impl OpenTelemetry {
             OpenTelemetryProtocol::Grpc => tracer_builder.with_batch_exporter(
                 opentelemetry_otlp::SpanExporter::builder()
                     .with_tonic()
-                    .with_tls_config(tonic::transport::ClientTlsConfig::new()
-                        .with_native_roots()
-                        .with_webpki_roots())
+                    .with_tls_config(
+                        tonic::transport::ClientTlsConfig::new()
+                            .with_native_roots()
+                            .with_webpki_roots(),
+                    )
                     .with_endpoint(self.endpoint.clone())
                     .with_metadata({
                         let mut tracing_metadata = tonic::metadata::MetadataMap::new();
@@ -307,9 +312,11 @@ impl OpenTelemetry {
             OpenTelemetryProtocol::Grpc => logger_builder.with_batch_exporter(
                 opentelemetry_otlp::LogExporter::builder()
                     .with_tonic()
-                    .with_tls_config(tonic::transport::ClientTlsConfig::new()
-                        .with_native_roots()
-                        .with_webpki_roots())
+                    .with_tls_config(
+                        tonic::transport::ClientTlsConfig::new()
+                            .with_native_roots()
+                            .with_webpki_roots(),
+                    )
                     .with_endpoint(self.endpoint.clone())
                     .with_metadata({
                         let mut tracing_metadata = tonic::metadata::MetadataMap::new();
@@ -417,7 +424,11 @@ impl OpenTelemetry {
         }
     }
 
-    fn build_stdout_layer<S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>>(&self) -> impl Layer<S> {
+    fn build_stdout_layer<
+        S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+    >(
+        &self,
+    ) -> impl Layer<S> {
         tracing_subscriber::fmt::layer()
     }
 }
@@ -440,34 +451,31 @@ impl BatteryBuilder for OpenTelemetry {
                 move |_meta, _ctx| enabled.load(std::sync::atomic::Ordering::Relaxed),
             ));
 
-        if let Some((tracer_provider, logs_provider)) = self.build_opentelemetry_providers(metadata) {
+        if let Some((tracer_provider, logs_provider)) = self.build_opentelemetry_providers(metadata)
+        {
             opentelemetry::global::set_tracer_provider(tracer_provider.clone());
-            
+
             let tracer_layer = Box::new(tracing_opentelemetry::OpenTelemetryLayer::new(
                 tracer_provider.tracer(metadata.service.clone()),
             ));
-            
-            let logging_layer = Box::new(opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(
-                &logs_provider,
-            ));
+
+            let logging_layer = Box::new(
+                opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(
+                    &logs_provider,
+                ),
+            );
 
             let registry = registry.with(tracer_layer);
 
             match (self.use_log_events, self.force_stdout) {
                 (true, Some(true)) => {
-                    registry
-                        .with(self.build_stdout_layer())  
-                        .init();
+                    registry.with(self.build_stdout_layer()).init();
                 }
                 (true, _) => {
-                    registry
-                        .with(logging_layer)
-                        .init();
-                },
+                    registry.with(logging_layer).init();
+                }
                 (false, Some(true)) => {
-                    registry
-                        .with(self.build_stdout_layer())  
-                        .init();
+                    registry.with(self.build_stdout_layer()).init();
                 }
                 _ => {
                     registry.init();
@@ -479,9 +487,7 @@ impl BatteryBuilder for OpenTelemetry {
                 logger_provider: Some(logs_provider),
             })
         } else if !matches!(self.force_stdout, Some(false)) {
-            registry
-                .with(self.build_stdout_layer())
-                .init();
+            registry.with(self.build_stdout_layer()).init();
 
             Box::new(OpenTelemetryBattery::default())
         } else {
