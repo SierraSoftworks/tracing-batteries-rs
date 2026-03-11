@@ -1,6 +1,6 @@
 use std::borrow::Cow;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 #[cfg(feature = "medama")]
 mod integration_medama;
@@ -70,7 +70,7 @@ pub trait Battery {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{atomic::AtomicBool, Arc};
+    use std::sync::{Arc, atomic::AtomicBool};
 
     use crate::{Battery, BatteryBuilder, Session};
 
