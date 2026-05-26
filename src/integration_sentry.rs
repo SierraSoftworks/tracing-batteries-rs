@@ -14,7 +14,10 @@ impl Battery for SentryBattery {
         let event = sentry::protocol::Event {
             message: Some(name.into()),
             level: sentry::Level::Info,
-            extra: properties.iter().map(|(k, v)| (k.clone(), v.clone().into())).collect(),
+            extra: properties
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone().into()))
+                .collect(),
             ..Default::default()
         };
 
