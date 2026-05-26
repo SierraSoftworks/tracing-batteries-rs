@@ -92,6 +92,28 @@ impl Session {
         PageMarker(self)
     }
 
+    /// Records a custom event within the telemetry session, reporting it to any registered batteries.
+     ///
+     /// This method may be called to report custom events within the application to your telemetry services,
+     /// allowing you to track specific actions or occurrences that are relevant to your application. The
+     /// `properties` parameter can be used to provide additional context about the event, which may be used
+     /// by the telemetry system to provide more detailed insights.
+     ///
+     /// ## Example
+     /// ```no_run
+     /// use tracing_batteries::{Session, Sentry};
+     ///
+     /// let session = Session::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+     /// session.record_event("user_signup", [("method".to_string(), "email".to_string())].into());
+     /// session.shutdown();
+     /// ```
+    pub fn record_event(self, name: impl Into<Cow<'static, str>>, properties: HashMap<String, String>) {
+        let name = name.into();
+        for battery in self.batteries.iter() {
+            battery.record_event(&name, &properties);
+        }
+    }
+
     /// Records that an error has occurred within the application, reporting it to any registered batteries.
     ///
     /// This method may be called to explicitly report an error within the application to your

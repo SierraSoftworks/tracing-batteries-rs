@@ -168,6 +168,11 @@ impl Battery for UmamiBattery {
         self.send_request(UmamiEvent::event(payload));
     }
 
+    fn record_event(&self, name: &str, properties: &HashMap<String, String>) {
+        let payload = self.build_payload().with_event(name, properties.clone());
+        self.send_request(UmamiEvent::event(payload));
+    }
+
     fn record_error(&self, error: &dyn std::error::Error) {
         // Umami does not have a built-in concept of "errors", so we will just record them as events with the error message as the event name
         let payload = self.build_payload().with_event(

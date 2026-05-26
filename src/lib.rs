@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -60,6 +61,10 @@ pub trait Battery {
     /// currently active). Only one page view can be active at a time, so this method should
     /// finish the previous page view before starting a new one.
     fn record_new_page<'a>(&self, _page: Page) {}
+
+    /// Called whenever the [`Session::record_event`] method is called, allowing the integration
+    /// to report a custom event to the telemetry system through the appropriate mechanism.
+    fn record_event(&self, _name: &str, _properties: &HashMap<String, String>) {}
 
     /// Called whenever the [`Session::record_error`] method is called, allowing the integration
     /// to report an error to the telemetry system through the appropriate mechanism.
