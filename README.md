@@ -117,3 +117,24 @@ fn main() {
     session.shutdown();
 }
 ```
+
+### Umami
+The `Umami` integration allows you to send telemetry data to a self-hosted [Umami](https://umami.is/)
+privacy preserving analytics server. This will track application execution as page views, and
+errors as events.
+
+**NOTE** You will need to ensure that the `umami` feature is enabled, it is **NOT** enabled by default.
+
+```rust
+use tracing_batteries::{Session, Umami};
+use tracing_batteries::prelude::*;
+
+fn main() {
+    let session = Session::new("my-service", env!("CARGO_PKG_VERSION"))
+        .with_battery(Umami::new("https://umami.example.com", "your-website-id"));
+
+    // Your app code goes here
+
+    session.shutdown();
+}
+```

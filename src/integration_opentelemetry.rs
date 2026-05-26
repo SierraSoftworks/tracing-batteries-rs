@@ -503,6 +503,10 @@ struct OpenTelemetryBattery {
 }
 
 impl Battery for OpenTelemetryBattery {
+    fn record_event(&self, name: &str, properties: &HashMap<String, String>) {
+        tracing::event!(tracing::Level::INFO, name = %name, properties = ?properties);
+    }
+
     fn record_error(&self, error: &dyn std::error::Error) {
         opentelemetry::trace::get_active_span(|span| span.record_error(error))
     }

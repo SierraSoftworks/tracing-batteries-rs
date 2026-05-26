@@ -68,3 +68,13 @@ medama = [
   "dep:sys-locale",
   "dep:tokio",
 ]
+umami = [
+  "dep:chrono",
+  "dep:hex",
+  "dep:radix_fmt",
+  "dep:rand",
+  "dep:serde",
+  "dep:sha2",
+  "dep:sys-locale",
+  "dep:tokio",
+]

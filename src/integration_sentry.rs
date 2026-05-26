@@ -10,6 +10,20 @@ struct SentryBattery {
 }
 
 impl Battery for SentryBattery {
+    fn record_event(&self, name: &str, properties: &std::collections::HashMap<String, String>) {
+        let event = sentry::protocol::Event {
+            message: Some(name.into()),
+            level: sentry::Level::Info,
+            extra: properties
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone().into()))
+                .collect(),
+            ..Default::default()
+        };
+
+        sentry::capture_event(event);
+    }
+
     fn record_error(&self, error: &dyn std::error::Error) {
         sentry::capture_error(error);
     }
