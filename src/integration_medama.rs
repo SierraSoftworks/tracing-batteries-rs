@@ -1,5 +1,5 @@
-use crate::{Page, prelude::*};
 use crate::{Battery, BatteryBuilder, Metadata};
+use crate::{Page, prelude::*};
 use chrono::NaiveDate;
 use radix_fmt::radix;
 use rand::random;

@@ -488,6 +488,5 @@ mod tests {
             id1, id1_new,
             "UniqueUserTracker should return a new identifier after reset"
         );
-
     }
 }

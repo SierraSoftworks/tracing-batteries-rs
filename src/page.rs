@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 /// A struct representing a page view within the telemetry system.
-/// 
+///
 /// This struct contains information about a page view, including the path and an optional title.
 /// It is used by the [`Session::record_new_page`] method to describe a page which is being viewed
 /// within the application.
@@ -21,11 +21,11 @@ impl Page {
     }
 
     /// Adds a title to the page view, which may be used by the telemetry system to provide additional context about the page.
-    /// 
+    ///
     /// ## Example
     /// ```
     /// use tracing_batteries::Page;
-    /// 
+    ///
     /// let page = Page::new("/home").with_title("Home Page");
     /// ```
     pub fn with_title(mut self, title: impl Into<Cow<'static, str>>) -> Self {
