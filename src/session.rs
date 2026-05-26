@@ -110,7 +110,7 @@ impl Session {
     /// session.shutdown();
     /// ```
     pub fn record_event(
-        self,
+        &self,
         name: impl Into<Cow<'static, str>>,
         properties: HashMap<String, String>,
     ) {
