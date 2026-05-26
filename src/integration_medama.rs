@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::{Page, prelude::*};
 use crate::{Battery, BatteryBuilder, Metadata};
 use chrono::NaiveDate;
 use radix_fmt::radix;
@@ -26,7 +26,7 @@ use std::time::Duration;
 /// The Medama integration can be initialized by providing the URL of a
 /// Medama server which will receive the analytics data. Telemetry will
 /// be sent as if it originated on a page with the URL
-/// `https://{service.name}.app/{service.version}`.
+/// `https://{service.name}.app`.
 ///
 /// ## Example
 /// ```no_run
@@ -40,7 +40,7 @@ use std::time::Duration;
 pub struct Medama {
     server: Cow<'static, str>,
 
-    page: Option<Cow<'static, str>>,
+    page: Option<Page>,
     referrer: Option<Cow<'static, str>>,
 }
 
@@ -85,7 +85,7 @@ impl Medama {
     ///
     /// session.shutdown();
     /// ```
-    pub fn with_initial_page<S: Into<Cow<'static, str>>>(mut self, page: S) -> Self {
+    pub fn with_initial_page<S: Into<Page>>(mut self, page: S) -> Self {
         self.page = Some(page.into());
         self
     }
@@ -131,7 +131,7 @@ impl BatteryBuilder for Medama {
         };
 
         // Spawn the load beacon as a background task
-        battery.send_load_beacon(&self.page.unwrap_or("/".into()));
+        battery.send_load_beacon(&self.page.unwrap_or("/".into()).url.as_ref());
 
         Box::new(battery)
     }
@@ -158,10 +158,10 @@ struct MedamaAnalyticsBattery {
 }
 
 impl Battery for MedamaAnalyticsBattery {
-    fn record_new_page<'a>(&self, page: Cow<'static, str>) {
+    fn record_new_page<'a>(&self, page: Page) {
         self.send_unload_beacon();
         self.beacon_id.replace(Self::generate_beacon_id());
-        self.send_load_beacon(&page);
+        self.send_load_beacon(&page.url);
     }
 
     fn record_error(&self, error: &dyn std::error::Error) {
@@ -405,7 +405,7 @@ impl UniqueUserTracker {
     #[cfg(test)]
     pub fn reset(&self) {
         let marker_file = self.get_marker_file();
-        let _ = std::fs::remove_file(marker_file);
+        _ = std::fs::remove_file(marker_file);
     }
 
     fn get_marker_file(&self) -> std::path::PathBuf {

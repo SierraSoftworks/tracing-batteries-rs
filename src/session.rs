@@ -1,4 +1,4 @@
-use crate::{Battery, BatteryBuilder, Metadata};
+use crate::{Battery, BatteryBuilder, Metadata, Page};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 pub struct Session {
     pub(crate) metadata: Metadata,
     pub(crate) batteries: Vec<Box<dyn Battery>>,
-    pub(crate) page_stack: Mutex<Vec<Cow<'static, str>>>,
+    pub(crate) page_stack: Mutex<Vec<Page>>,
     pub(crate) enabled: Arc<AtomicBool>,
 }
 
@@ -77,7 +77,7 @@ impl Session {
     /// session.shutdown();
     /// ```
     ///
-    pub fn record_new_page<'a, P: Into<Cow<'static, str>>>(&'a self, page: P) -> PageMarker<'a> {
+    pub fn record_new_page<'a>(&'a self, page: impl Into<Page>) -> PageMarker<'a> {
         let page = page.into();
         if let Ok(mut stack) = self.page_stack.lock() {
             stack.push(page.clone());

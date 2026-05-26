@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -8,11 +7,15 @@ mod integration_medama;
 mod integration_opentelemetry;
 #[cfg(feature = "sentry")]
 mod integration_sentry;
+#[cfg(feature = "umami")]
+mod integration_umami;
 mod metadata;
+mod page;
 pub mod prelude;
 mod session;
 
 pub use metadata::Metadata;
+pub use page::Page;
 pub use session::Session;
 
 #[cfg(feature = "medama")]
@@ -21,6 +24,8 @@ pub use integration_medama::*;
 pub use integration_opentelemetry::*;
 #[cfg(feature = "sentry")]
 pub use integration_sentry::*;
+#[cfg(feature = "umami")]
+pub use integration_umami::*;
 
 /// A trait which is implemented by integration builders, allowing them to be used with this library.
 ///
@@ -54,7 +59,7 @@ pub trait Battery {
     /// to report that a new page view has started (and finish any existing page views which are
     /// currently active). Only one page view can be active at a time, so this method should
     /// finish the previous page view before starting a new one.
-    fn record_new_page<'a>(&self, _page: Cow<'static, str>) {}
+    fn record_new_page<'a>(&self, _page: Page) {}
 
     /// Called whenever the [`Session::record_error`] method is called, allowing the integration
     /// to report an error to the telemetry system through the appropriate mechanism.
