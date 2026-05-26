@@ -6,6 +6,7 @@ use std::borrow::Cow;
 /// It is used by the [`Session::record_new_page`] method to describe a page which is being viewed
 /// within the application.
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct Page {
     pub(crate) url: Cow<'static, str>,
     pub(crate) title: Option<Cow<'static, str>>,
