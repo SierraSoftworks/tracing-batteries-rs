@@ -35,7 +35,7 @@ sentry = { version = "0.48", default-features = false, optional = true, features
 serde = { version = "1.0.228", features = ["derive"], optional = true }
 sha2 = { version = "0.11.0", optional = true }
 sys-locale = { version = "0.3.2", optional = true }
-tokio = { version = "1.52.3", optional = true }
+tokio = { version = "1.52.3", optional = true, features = ["rt", "net", "time"] }
 tonic = { version = "0.14.6", features = ["tls-webpki-roots", "tls-native-roots"], optional = true }
 tracing = { version = "0.1.44", features = ["log"] }
 tracing-attributes = { git = "https://github.com/SierraSoftworks/tracing.git" }
@@ -45,10 +45,26 @@ tracing-subscriber = { version = "0.3.23" }
 opentelemetry-appender-tracing = { version = "0.32.0" }
 
 [dev-dependencies]
+serde_json = "1"
 tokio = { version = "1.52.3", features = ["full"] }
+
+[[example]]
+name = "analytics"
+required-features = ["analytics"]
 
 [features]
 default = ["opentelemetry", "sentry"]
+analytics = [
+  "dep:chrono",
+  "dep:hex",
+  "dep:iana-time-zone",
+  "dep:radix_fmt",
+  "dep:rand",
+  "dep:serde",
+  "dep:sha2",
+  "dep:sys-locale",
+  "dep:tokio",
+]
 sentry = ["dep:sentry"]
 opentelemetry = [
   "dep:opentelemetry",

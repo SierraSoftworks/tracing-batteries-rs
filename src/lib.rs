@@ -2,6 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+mod error_info;
+#[cfg(feature = "analytics")]
+mod integration_analytics;
 #[cfg(feature = "medama")]
 mod integration_medama;
 #[cfg(feature = "opentelemetry")]
@@ -15,10 +18,13 @@ mod page;
 pub mod prelude;
 mod session;
 
+pub use error_info::ErrorInfo;
 pub use metadata::Metadata;
 pub use page::Page;
 pub use session::Session;
 
+#[cfg(feature = "analytics")]
+pub use integration_analytics::*;
 #[cfg(feature = "medama")]
 pub use integration_medama::*;
 #[cfg(feature = "opentelemetry")]
@@ -68,7 +74,11 @@ pub trait Battery {
 
     /// Called whenever the [`Session::record_error`] method is called, allowing the integration
     /// to report an error to the telemetry system through the appropriate mechanism.
-    fn record_error(&self, _error: &dyn std::error::Error) {}
+    ///
+    /// The [`ErrorInfo`] provides the original error alongside pre-captured details such as
+    /// the concrete error type's name, the message, the chain of causes, and (when enabled
+    /// via `RUST_BACKTRACE`) a backtrace from the `record_error` call site.
+    fn record_error(&self, _error: &ErrorInfo) {}
 
     /// Called when the process is exiting, allowing the integration to perform any necessary cleanup
     /// and shutdown operations.

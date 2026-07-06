@@ -143,8 +143,9 @@ impl Session {
     /// }
     /// ```
     pub fn record_error<'a, E: std::error::Error>(&self, exception: &'a E) -> &'a E {
+        let info = crate::ErrorInfo::new(exception);
         for battery in &self.batteries {
-            battery.record_error(exception);
+            battery.record_error(&info);
         }
 
         exception

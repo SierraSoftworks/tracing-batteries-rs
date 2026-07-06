@@ -24,8 +24,8 @@ impl Battery for SentryBattery {
         sentry::capture_event(event);
     }
 
-    fn record_error(&self, error: &dyn std::error::Error) {
-        sentry::capture_error(error);
+    fn record_error(&self, error: &crate::ErrorInfo) {
+        sentry::capture_error(error.error);
     }
 
     fn shutdown(&mut self) {
