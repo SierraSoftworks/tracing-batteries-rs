@@ -76,8 +76,8 @@ pub trait Battery {
     /// to report an error to the telemetry system through the appropriate mechanism.
     ///
     /// The [`ErrorInfo`] provides the original error alongside pre-captured details such as
-    /// the concrete error type's name, the message, the chain of causes, and (when enabled
-    /// via `RUST_BACKTRACE`) a backtrace from the `record_error` call site.
+    /// the concrete error type's name, the message, the chain of causes, and a backtrace
+    /// from the `record_error` call site.
     fn record_error(&self, _error: &ErrorInfo) {}
 
     /// Called when the process is exiting, allowing the integration to perform any necessary cleanup

@@ -54,8 +54,7 @@ add to your `Session` to enable telemetry emission to various backends.
 The `Analytics` integration allows you to send telemetry data to a self-hosted
 [analytics](https://github.com/SierraSoftworks/analytics) privacy preserving analytics server.
 This will track application execution as page views, custom events as events, and errors as
-rich exception reports (including the error's type, cause chain, and backtrace when
-`RUST_BACKTRACE` is enabled).
+rich exception reports (including the error's type, cause chain, and backtrace).
 
 Unhandled panics are also captured and reported as exceptions by default, including the panic's
 message, location, and a backtrace. You can disable this behaviour by calling

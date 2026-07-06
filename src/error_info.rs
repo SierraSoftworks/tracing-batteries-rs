@@ -23,15 +23,16 @@ pub struct ErrorInfo<'a> {
 
     /// A backtrace captured at the `record_error` call site.
     ///
-    /// This is captured with [`Backtrace::capture`], so it honours the standard
-    /// `RUST_BACKTRACE`/`RUST_LIB_BACKTRACE` environment variables and will be
-    /// [disabled](BacktraceStatus::Disabled) unless those are set.
+    /// This is captured with [`Backtrace::force_capture`], so it is always collected
+    /// regardless of the `RUST_BACKTRACE`/`RUST_LIB_BACKTRACE` environment variables.
+    /// It is only [unsupported](BacktraceStatus::Unsupported) on platforms without
+    /// backtrace support.
     pub backtrace: Backtrace,
 }
 
 impl<'a> ErrorInfo<'a> {
     /// Captures the details of the provided error, including its type name, message,
-    /// cause chain, and (when enabled via `RUST_BACKTRACE`) a backtrace.
+    /// cause chain, and a backtrace.
     pub fn new<E: std::error::Error>(error: &'a E) -> Self {
         let mut causes = Vec::new();
         let mut source = error.source();
@@ -45,7 +46,7 @@ impl<'a> ErrorInfo<'a> {
             error_type: std::any::type_name::<E>(),
             message: error.to_string(),
             causes,
-            backtrace: Backtrace::capture(),
+            backtrace: Backtrace::force_capture(),
         }
     }
 
@@ -106,5 +107,9 @@ mod tests {
         assert_eq!(info.message, "the outer failure");
         assert_eq!(info.causes, vec!["the inner failure".to_string()]);
         assert_eq!(info.error.to_string(), "the outer failure");
+        assert!(
+            info.backtrace_text().is_some(),
+            "a backtrace should always be captured, regardless of RUST_BACKTRACE"
+        );
     }
 }

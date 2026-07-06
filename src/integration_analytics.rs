@@ -35,7 +35,7 @@ const MAX_METADATA_VALUE: usize = 1024;
 /// [`with_hostname`](Analytics::with_hostname)), custom events are reported through
 /// [`Session::record_event`](crate::Session::record_event), and errors reported through
 /// [`Session::record_error`](crate::Session::record_error) become exception reports with
-/// the error's type, message, cause chain, and (when `RUST_BACKTRACE` is enabled) a backtrace.
+/// the error's type, message, cause chain, and a backtrace.
 ///
 /// Unhandled panics are also captured and reported as exceptions by default; call
 /// [`with_panic_capture(false)`](Analytics::with_panic_capture) to disable this. The panic
