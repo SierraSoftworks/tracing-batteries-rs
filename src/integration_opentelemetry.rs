@@ -507,8 +507,8 @@ impl Battery for OpenTelemetryBattery {
         tracing::event!(tracing::Level::INFO, name = %name, properties = ?properties);
     }
 
-    fn record_error(&self, error: &dyn std::error::Error) {
-        opentelemetry::trace::get_active_span(|span| span.record_error(error))
+    fn record_error(&self, error: &crate::ErrorInfo) {
+        opentelemetry::trace::get_active_span(|span| span.record_error(error.error))
     }
 
     fn shutdown(&mut self) {

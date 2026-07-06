@@ -164,9 +164,9 @@ impl Battery for MedamaAnalyticsBattery {
         self.send_load_beacon(&page.url);
     }
 
-    fn record_error(&self, error: &dyn std::error::Error) {
+    fn record_error(&self, error: &crate::ErrorInfo) {
         let mut data = HashMap::new();
-        data.insert("error".to_string(), error.to_string());
+        data.insert("error".to_string(), error.message.clone());
 
         self.send_custom_event(data);
     }

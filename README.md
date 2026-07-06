@@ -50,6 +50,32 @@ fn main() {
 This library ships with some integration "batteries" which you can easily
 add to your `Session` to enable telemetry emission to various backends.
 
+### Analytics
+The `Analytics` integration allows you to send telemetry data to a self-hosted
+[analytics](https://github.com/SierraSoftworks/analytics) privacy preserving analytics server.
+This will track application execution as page views, custom events as events, and errors as
+rich exception reports (including the error's type, cause chain, and backtrace).
+
+Unhandled panics are also captured and reported as exceptions by default, including the panic's
+message, location, and a backtrace. You can disable this behaviour by calling
+`.with_panic_capture(false)` on the battery.
+
+**NOTE** You will need to ensure that the `analytics` feature is enabled, it is **NOT** enabled by default.
+
+```rust
+use tracing_batteries::{Session, Analytics};
+use tracing_batteries::prelude::*;
+
+fn main() {
+    let session = Session::new("my-service", env!("CARGO_PKG_VERSION"))
+        .with_battery(Analytics::new("https://analytics.example.com"));
+
+    // Your app code goes here
+
+    session.shutdown();
+}
+```
+
 ### Medama
 The `Medama` integration allows you to send telemetry data to a self-hosted [Medama](https://oss.medama.io)
 privacy preserving analytics server. This will track application execution as page views, and
