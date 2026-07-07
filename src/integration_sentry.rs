@@ -61,7 +61,12 @@ impl Battery for SentryBattery {
     }
 
     fn record_error(&self, error: &crate::ErrorInfo) {
-        sentry::capture_error(error.error);
+        let mut event = sentry::event_from_error(error.error);
+        for (key, value) in &error.metadata {
+            event.extra.insert(key.to_string(), value.clone().into());
+        }
+
+        sentry::capture_event(event);
     }
 
     fn shutdown(&mut self) {
