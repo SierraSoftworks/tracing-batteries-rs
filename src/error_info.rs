@@ -1,4 +1,4 @@
-use std::backtrace::{Backtrace, BacktraceStatus};
+use std::{backtrace::{Backtrace, BacktraceStatus}, collections::HashMap};
 
 /// Rich context about an error reported via [`Session::record_error`](crate::Session::record_error).
 ///
@@ -28,6 +28,13 @@ pub struct ErrorInfo<'a> {
     /// It is only [unsupported](BacktraceStatus::Unsupported) on platforms without
     /// backtrace support.
     pub backtrace: Backtrace,
+
+    /// Additional metadata about the error, which may be provided by the integration
+    /// or the application. This is a free-form map of key/value pairs which may be
+    /// used to provide additional context about the error, such as the HTTP status code
+    /// of a failed request, the database query which failed, or any other relevant
+    /// information which may help diagnose the issue.
+    pub metadata: HashMap<&'static str, String>,
 }
 
 impl<'a> ErrorInfo<'a> {
@@ -47,12 +54,31 @@ impl<'a> ErrorInfo<'a> {
             message: error.to_string(),
             causes,
             backtrace: Backtrace::force_capture(),
+            metadata: HashMap::new(),
         }
     }
 
     /// Returns the backtrace as text, only when one was actually captured.
     pub fn backtrace_text(&self) -> Option<String> {
         (self.backtrace.status() == BacktraceStatus::Captured).then(|| self.backtrace.to_string())
+    }
+
+    /// Adds a new metadata field to the error info, which will be reported to the telemetry system.
+    pub fn with_metadata(mut self, key: &'static str, value: impl Into<String>) -> Self {
+        self.metadata.insert(key, value.into());
+        self
+    }
+
+    /// Disables the backtrace for this error info, which may be useful for errors which are
+    /// expected to occur frequently and for which a backtrace is not useful (for example,
+    /// a "not found" error when looking up a resource by ID).
+    /// 
+    /// Note that this may impact the ability of the telemetry system to associate different
+    /// errors with the same root cause, as the backtrace is commonly used to identify the call
+    /// site of the error.
+    pub fn without_backtrace(mut self) -> Self {
+        self.backtrace = Backtrace::disabled();
+        self
     }
 }
 

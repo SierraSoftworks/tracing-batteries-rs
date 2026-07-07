@@ -1,4 +1,4 @@
-use crate::{Battery, BatteryBuilder, Metadata, Page};
+use crate::{Battery, BatteryBuilder, ErrorInfo, Metadata, Page};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
@@ -154,13 +154,40 @@ impl Session {
     ///  Err(e) => eprintln!("{:?}", session.record_error(&e)),
     /// }
     /// ```
-    pub fn record_error<'a, E: std::error::Error>(&self, exception: &'a E) -> &'a E {
-        let info = crate::ErrorInfo::new(exception);
+    pub fn record_error<'a, E: std::error::Error>(&self, error: &'a E) -> &'a E {
+        let info = error.into();
         for battery in &self.batteries {
             battery.record_error(&info);
         }
 
-        exception
+        error
+    }
+
+    /// Records that an error has occurred within the application, reporting it to any registered batteries.
+    /// 
+    /// This method is similar to [`Session::record_error`], but allows the caller to provide additional metadata
+    /// about the error which will be reported to the telemetry system.
+    /// 
+    /// ## Example
+    /// ```no_run
+    /// use tracing_batteries::{Session, Sentry, ErrorInfo};
+    /// 
+    /// let session = Session::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
+    ///  .with_battery(Sentry::new("https://yourdsn@sentry.example.com"));
+    /// 
+    /// match std::fs::read_to_string("nonexistent-file.txt") {
+    ///   Ok(_) => {}
+    ///   Err(e) => {
+    ///     session.record_custom_error(ErrorInfo::new(&e)
+    ///       .with_metadata("file_path", "nonexistent-file.txt"))
+    ///   }
+    /// }
+    /// ```
+    pub fn record_custom_error<'a>(&self, info: impl Into<ErrorInfo<'a>>) {
+        let info = info.into();
+        for battery in &self.batteries {
+            battery.record_error(&info);
+        }
     }
 
     /// Shuts down the telemetry session, ensuring that all batteries are properly cleaned up.
@@ -226,15 +253,9 @@ pub struct PageMarker<'a>(pub(crate) &'a Session);
 impl Drop for PageMarker<'_> {
     fn drop(&mut self) {
         if let Ok(mut stack) = self.0.page_stack.lock() {
-            stack.pop();
-
-            // Only report a page view when there is a previous page to return to; if the
-            // stack is now empty there is no active page (for example when the session was
-            // configured without an initial page), so we leave the batteries as they are.
-            if let Some(previous) = stack.last().cloned() {
-                for battery in self.0.batteries.iter() {
-                    battery.record_new_page(previous.clone());
-                }
+            let last_page = stack.pop();
+            for battery in self.0.batteries.iter() {
+                battery.record_new_page(last_page.clone().unwrap_or_default());
             }
         } else {
             tracing::warn!("Failed to lock page stack, unable to drop page marker");
