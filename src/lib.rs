@@ -38,6 +38,7 @@ pub use integration_umami::*;
 /// another thread. Battery state protected this way is plain data which remains
 /// valid across a mid-update panic, and telemetry must never take the hosting
 /// application down with it.
+#[allow(dead_code)]
 pub(crate) fn lock_ignoring_poison<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex
         .lock()
