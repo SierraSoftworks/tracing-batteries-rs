@@ -190,10 +190,14 @@ impl Battery for MedamaAnalyticsBattery {
     }
 
     fn record_error(&self, error: &crate::ErrorInfo) {
-        let mut data = HashMap::new();
-        data.insert("error".to_string(), error.message.clone());
+        let mut metadata = HashMap::from([
+            ("error".to_string(), error.message.clone()),
+            ("error_type".to_string(), error.error_type.to_string()),
+            ("causes".to_string(), error.causes.join(" -> ")),
+        ]);
+        metadata.extend(error.metadata.iter().map(|(k, v)| (k.to_string(), v.clone())));
 
-        self.send_custom_event(data);
+        self.send_custom_event(metadata);
     }
 
     fn shutdown(&mut self) {
