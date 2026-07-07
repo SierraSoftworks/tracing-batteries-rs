@@ -48,9 +48,7 @@ const MAX_METADATA_VALUE: usize = 1024;
 /// approximately three seconds delivering the report before continuing to unwind or abort.
 ///
 /// Requests carry a `{service.name}/{service.version}` User-Agent so the server classifies
-/// them as an application rather than a browser. Note that the server silently discards
-/// traffic whose User-Agent looks like a bot, so service names containing `bot`, `crawler`,
-/// or `spider` will not be recorded.
+/// them as an application rather than a browser.
 ///
 /// ## Example
 /// ```no_run
@@ -67,6 +65,7 @@ pub struct Analytics {
     page: Option<Page>,
     referrer: Option<Cow<'static, str>>,
     hostname: Option<Cow<'static, str>>,
+    session_id: String,
     panic_capture: bool,
 }
 
@@ -92,8 +91,34 @@ impl Analytics {
             page: None,
             referrer: None,
             hostname: None,
+            session_id: generate_beacon_id(),
             panic_capture: true,
         }
+    }
+
+    /// Generates a new random session ID for use with the Analytics integration.
+    /// 
+    /// This is intended for advanced use cases where you need to correlate telemetry across different
+    /// instances of your service, for example when propagating session IDs between parent and child
+    /// processes.
+    /// 
+    /// ## Example
+    /// ```no_run
+    /// use tracing_batteries::{Session, Analytics};
+    ///
+    /// let session_id = Analytics::session_id();
+    /// println!("Generated session ID: {}", session_id);
+    /// 
+    /// let session = Session::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
+    ///   .with_battery(Analytics::new("https://analytics.example.com")
+    ///     .with_session_id(session_id));
+    /// 
+    /// // Your code which propagates the session ID to child processes or other services goes here
+    /// 
+    /// session.shutdown();
+    /// ```
+    pub fn session_id() -> String {
+        generate_beacon_id()
     }
 
     /// Configures the page URL which should be used for the initial analytics event.
@@ -182,6 +207,16 @@ impl Analytics {
         self.panic_capture = enabled;
         self
     }
+
+    /// Configures the session ID which should be used for the telemetry session.
+    /// 
+    /// This allows you to provide a custom session ID (for example, an OpenTelemetry trace ID)
+    /// which will be used to correlate telemetry across multiple sessions. If not set, a random
+    /// session ID will be generated for each session.
+    pub fn with_session_id(mut self, session_id: impl Into<String>) -> Self {
+        self.session_id = session_id.into();
+        self
+    }
 }
 
 impl BatteryBuilder for Analytics {
@@ -210,7 +245,7 @@ impl BatteryBuilder for Analytics {
             language: sys_locale::get_locale().unwrap_or_else(|| "en".to_string()),
             timezone: iana_time_zone::get_timezone().ok(),
             version: metadata.version.to_string(),
-            session_id: generate_beacon_id(),
+            session_id: self.session_id,
             context,
             page: Mutex::new(PageState {
                 beacon: generate_beacon_id(),
@@ -263,8 +298,8 @@ struct AnalyticsCore {
     /// The per-run session id linking every event this battery reports into one
     /// session trace on the server (page views rotate their beacon id, but the
     /// session id is fixed for the lifetime of the battery — mirroring the
-    /// browser tracker, where it is fixed for the lifetime of the page's JS
-    /// context). It exists only in memory, so runs remain uncorrelatable.
+    /// browser tracker, where it is fixed for the lifetime of the page's
+    /// session).
     session_id: String,
     context: BTreeMap<String, String>,
 
