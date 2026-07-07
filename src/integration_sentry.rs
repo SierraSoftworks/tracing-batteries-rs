@@ -5,23 +5,59 @@ use crate::{Battery, BatteryBuilder, Metadata};
 use sentry;
 pub use sentry::Level as SentryLevel;
 
+/// Controls how [`Session::record_event`](crate::Session::record_event) calls are
+/// reported to Sentry by the [`Sentry`] battery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SentryEventMode {
+    /// Record events as [breadcrumbs](https://docs.sentry.io/product/issues/issue-details/breadcrumbs/)
+    /// which are attached to any subsequent Sentry events (the default).
+    #[default]
+    Breadcrumb,
+    /// Record events as standalone Sentry events, each of which will appear as
+    /// its own entry in your Sentry issue stream.
+    Event,
+}
+
 struct SentryBattery {
     raven: sentry::ClientInitGuard,
+    event_mode: SentryEventMode,
+    enabled: Arc<AtomicBool>,
 }
 
 impl Battery for SentryBattery {
     fn record_event(&self, name: &str, properties: &std::collections::HashMap<String, String>) {
-        let event = sentry::protocol::Event {
-            message: Some(name.into()),
-            level: sentry::Level::Info,
-            extra: properties
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone().into()))
-                .collect(),
-            ..Default::default()
-        };
+        match self.event_mode {
+            SentryEventMode::Breadcrumb => {
+                // Breadcrumbs bypass the `before_send` hook which enforces the enabled
+                // flag for events, so the flag needs to be checked here instead.
+                if !self.enabled.load(std::sync::atomic::Ordering::Relaxed) {
+                    return;
+                }
 
-        sentry::capture_event(event);
+                sentry::add_breadcrumb(sentry::Breadcrumb {
+                    message: Some(name.into()),
+                    level: sentry::Level::Info,
+                    data: properties
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone().into()))
+                        .collect(),
+                    ..Default::default()
+                });
+            }
+            SentryEventMode::Event => {
+                let event = sentry::protocol::Event {
+                    message: Some(name.into()),
+                    level: sentry::Level::Info,
+                    extra: properties
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone().into()))
+                        .collect(),
+                    ..Default::default()
+                };
+
+                sentry::capture_event(event);
+            }
+        }
     }
 
     fn record_error(&self, error: &crate::ErrorInfo) {
@@ -76,6 +112,7 @@ pub struct Sentry {
     config: sentry::ClientOptions,
 
     default_level: Option<SentryLevel>,
+    event_mode: SentryEventMode,
 }
 
 impl Sentry {
@@ -84,6 +121,7 @@ impl Sentry {
         Self {
             config: config.into(),
             default_level: None,
+            event_mode: SentryEventMode::default(),
         }
     }
 
@@ -115,6 +153,30 @@ impl Sentry {
         }
     }
 
+    /// Sets how [`Session::record_event`](crate::Session::record_event) calls are reported to Sentry.
+    ///
+    /// By default, events are recorded as [breadcrumbs](https://docs.sentry.io/product/issues/issue-details/breadcrumbs/)
+    /// which are attached to any subsequent Sentry events, providing context without generating
+    /// standalone entries in your issue stream. Use [`SentryEventMode::Event`] if you would prefer
+    /// each event to be captured as its own Sentry event.
+    ///
+    /// ## Example
+    /// ```rust
+    /// use tracing_batteries::{Session, Sentry, SentryEventMode, prelude::*};
+    ///
+    /// let session = Session::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
+    ///   .with_battery(Sentry::new("https://username:password@ingest.sentry.io/project")
+    ///     .with_event_mode(SentryEventMode::Event));
+    ///
+    /// // Will be captured as a standalone Sentry event rather than a breadcrumb
+    /// session.record_event("user_signup", [("method".to_string(), "email".to_string())].into());
+    ///
+    /// session.shutdown();
+    /// ```
+    pub fn with_event_mode(self, event_mode: SentryEventMode) -> Self {
+        Self { event_mode, ..self }
+    }
+
     fn build_level(&self) -> SentryLevel {
         match std::env::var("LOG_LEVEL")
             .map(|s| s.to_lowercase())
@@ -141,12 +203,13 @@ impl BatteryBuilder for Sentry {
         };
         config.session_mode = sentry::SessionMode::Application;
 
+        let send_enabled = enabled.clone();
         config.before_send = match config.before_send {
             Some(before_send) => Some(Arc::new(Box::new(
                 move |event: sentry::protocol::Event<'static>| {
                     if event.level < level {
                         None
-                    } else if enabled.load(std::sync::atomic::Ordering::Relaxed) {
+                    } else if send_enabled.load(std::sync::atomic::Ordering::Relaxed) {
                         before_send(event)
                     } else {
                         None
@@ -157,7 +220,7 @@ impl BatteryBuilder for Sentry {
                 move |event: sentry::protocol::Event<'static>| {
                     if event.level < level {
                         None
-                    } else if enabled.load(std::sync::atomic::Ordering::Relaxed) {
+                    } else if send_enabled.load(std::sync::atomic::Ordering::Relaxed) {
                         Some(event)
                     } else {
                         None
@@ -176,6 +239,10 @@ impl BatteryBuilder for Sentry {
 
         sentry::start_session();
 
-        Box::new(SentryBattery { raven })
+        Box::new(SentryBattery {
+            raven,
+            event_mode: self.event_mode,
+            enabled,
+        })
     }
 }
