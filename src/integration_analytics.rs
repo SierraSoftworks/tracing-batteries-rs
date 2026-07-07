@@ -37,6 +37,11 @@ const MAX_METADATA_VALUE: usize = 1024;
 /// [`Session::record_error`](crate::Session::record_error) become exception reports with
 /// the error's type, message, cause chain, and a backtrace.
 ///
+/// Every event of one application run carries the same session id (generated afresh per
+/// battery, held only in memory), so the analytics server can assemble the run's page
+/// views, events, and exceptions into a single session trace without making separate
+/// runs correlatable.
+///
 /// Unhandled panics are also captured and reported as exceptions by default; call
 /// [`with_panic_capture(false)`](Analytics::with_panic_capture) to disable this. The panic
 /// hook chains any previously installed hook, and a panicking process may spend up to
@@ -205,6 +210,7 @@ impl BatteryBuilder for Analytics {
             language: sys_locale::get_locale().unwrap_or_else(|| "en".to_string()),
             timezone: iana_time_zone::get_timezone().ok(),
             version: metadata.version.to_string(),
+            session_id: generate_beacon_id(),
             context,
             page: Mutex::new(PageState {
                 beacon: generate_beacon_id(),
@@ -254,6 +260,12 @@ struct AnalyticsCore {
     language: String,
     timezone: Option<String>,
     version: String,
+    /// The per-run session id linking every event this battery reports into one
+    /// session trace on the server (page views rotate their beacon id, but the
+    /// session id is fixed for the lifetime of the battery — mirroring the
+    /// browser tracker, where it is fixed for the lifetime of the page's JS
+    /// context). It exists only in memory, so runs remain uncorrelatable.
+    session_id: String,
     context: BTreeMap<String, String>,
 
     page: Mutex<PageState>,
@@ -429,6 +441,7 @@ impl AnalyticsCore {
         let payload = ExceptionPayload {
             u: self.page_url(&path),
             b: beacon,
+            sid: Some(self.session_id.clone()),
             ty: "panic".to_string(),
             m: truncate_chars(&message, MAX_MESSAGE),
             s: Some(truncate_chars(&stack, MAX_STACK)),
@@ -533,6 +546,7 @@ impl Battery for AnalyticsBattery {
 
         let payload = HitPayload {
             b: beacon,
+            s: Some(self.core.session_id.clone()),
             e: "custom",
             u: self.core.page_url(&path),
             r: None,
@@ -554,6 +568,7 @@ impl Battery for AnalyticsBattery {
         let payload = ExceptionPayload {
             u: self.core.page_url(&path),
             b: Some(beacon),
+            sid: Some(self.core.session_id.clone()),
             ty: truncate_chars(error.error_type, MAX_MESSAGE),
             m: truncate_chars(&error.message, MAX_MESSAGE),
             s: compose_stack(error),
@@ -586,6 +601,7 @@ impl AnalyticsBattery {
 
         let payload = HitPayload {
             b: beacon,
+            s: Some(self.core.session_id.clone()),
             e: "load",
             u: self.core.page_url(&path),
             r: self.referrer.clone(),
@@ -616,6 +632,7 @@ impl AnalyticsBattery {
 
         let payload = HitPayload {
             b: beacon,
+            s: Some(self.core.session_id.clone()),
             e: "unload",
             u: self.core.page_url(&path),
             r: None,
@@ -695,6 +712,9 @@ fn normalize_path(path: &str) -> String {
     }
 }
 
+/// Generates a short random id (base36 timestamp + random suffix), used for both
+/// per-page-view beacon ids and the per-run session id — the same shape the browser
+/// tracker produces.
 fn generate_beacon_id() -> String {
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -810,6 +830,9 @@ impl UniqueVisitTracker {
 struct HitPayload {
     // The beacon ID linking the events of a single page view
     b: String,
+    // The session ID linking every event of this application run
+    #[serde(skip_serializing_if = "Option::is_none")]
+    s: Option<String>,
     // The event kind: "load", "unload" or "custom"
     e: &'static str,
     // The full URL of the page being tracked (required on every kind)
@@ -844,6 +867,10 @@ struct ExceptionPayload {
     // The beacon ID linking the exception to a page view
     #[serde(skip_serializing_if = "Option::is_none")]
     b: Option<String>,
+    // The session ID linking the exception to this application run's session
+    // trace (`s` is taken by the stack on this endpoint)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sid: Option<String>,
     // The exception type name
     ty: String,
     // The exception message
@@ -929,6 +956,7 @@ mod tests {
     fn hit_payload_wire_format() {
         let payload = HitPayload {
             b: "beacon123".to_string(),
+            s: Some("session123".to_string()),
             e: "load",
             u: "https://example.app/home?utm_campaign=1.0.0".to_string(),
             r: None,
@@ -945,6 +973,7 @@ mod tests {
             value,
             serde_json::json!({
                 "b": "beacon123",
+                "s": "session123",
                 "e": "load",
                 "u": "https://example.app/home?utm_campaign=1.0.0",
                 "q": true,
@@ -955,6 +984,7 @@ mod tests {
 
         let payload = HitPayload {
             b: "beacon123".to_string(),
+            s: Some("session123".to_string()),
             e: "custom",
             u: "https://example.app/".to_string(),
             r: None,
@@ -971,6 +1001,7 @@ mod tests {
             value,
             serde_json::json!({
                 "b": "beacon123",
+                "s": "session123",
                 "e": "custom",
                 "u": "https://example.app/",
                 "q": false,
@@ -986,6 +1017,7 @@ mod tests {
         let payload = ExceptionPayload {
             u: "https://example.app/".to_string(),
             b: Some("beacon123".to_string()),
+            sid: Some("session123".to_string()),
             ty: "std::io::Error".to_string(),
             m: "file not found".to_string(),
             s: None,
@@ -1001,6 +1033,7 @@ mod tests {
             serde_json::json!({
                 "u": "https://example.app/",
                 "b": "beacon123",
+                "sid": "session123",
                 "ty": "std::io::Error",
                 "m": "file not found",
                 "h": true,
