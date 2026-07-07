@@ -226,9 +226,15 @@ pub struct PageMarker<'a>(pub(crate) &'a Session);
 impl Drop for PageMarker<'_> {
     fn drop(&mut self) {
         if let Ok(mut stack) = self.0.page_stack.lock() {
-            let last_page = stack.pop();
-            for battery in self.0.batteries.iter() {
-                battery.record_new_page(last_page.clone().unwrap_or_default());
+            stack.pop();
+
+            // Only report a page view when there is a previous page to return to; if the
+            // stack is now empty there is no active page (for example when the session was
+            // configured without an initial page), so we leave the batteries as they are.
+            if let Some(previous) = stack.last().cloned() {
+                for battery in self.0.batteries.iter() {
+                    battery.record_new_page(previous.clone());
+                }
             }
         } else {
             tracing::warn!("Failed to lock page stack, unable to drop page marker");

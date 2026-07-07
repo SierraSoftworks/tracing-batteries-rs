@@ -67,7 +67,7 @@ impl Umami {
             server: server.into(),
             website_id: website_id.into(),
 
-            initial_page: None,
+            initial_page: Some(Page::default()),
             referrer: Cow::Borrowed(""),
         }
     }
@@ -87,6 +87,27 @@ impl Umami {
     /// ```
     pub fn with_initial_page(mut self, page: impl Into<Page>) -> Self {
         self.initial_page = Some(page.into());
+        self
+    }
+
+    /// Configures the Umami integration to not report an initial page view.
+    ///
+    /// By default, the integration reports a page view for `/` (or the page configured
+    /// via [`with_initial_page`](Umami::with_initial_page)) as soon as the session
+    /// starts. Call this method if you would rather defer the first page view until you
+    /// explicitly call [`Session::record_new_page`].
+    ///
+    /// ## Example
+    /// ```no_run
+    /// use tracing_batteries::{Session, Umami};
+    ///
+    /// let session = Session::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
+    ///     .with_battery(Umami::new("https://umami.example.com", "your-website-id").without_initial_page());
+    ///
+    /// session.shutdown();
+    /// ```
+    pub fn without_initial_page(mut self) -> Self {
+        self.initial_page = None;
         self
     }
 
@@ -112,7 +133,7 @@ impl Umami {
 impl BatteryBuilder for Umami {
     fn setup(self, metadata: &Metadata, enabled: Arc<AtomicBool>) -> Box<dyn Battery> {
         let unique_user = UniqueUserTracker::new(metadata.service.clone());
-        let initial_page = self.initial_page.unwrap_or_default();
+        let initial_page = self.initial_page;
 
         let battery = UmamiBattery {
             server: self.server,
@@ -120,7 +141,7 @@ impl BatteryBuilder for Umami {
 
             metadata: metadata.clone(),
 
-            page: Mutex::new(initial_page.clone()),
+            page: Mutex::new(initial_page.clone().unwrap_or_default()),
             referrer: Mutex::new("".into()),
 
             cache: Arc::new(RwLock::new(None)),
@@ -131,7 +152,10 @@ impl BatteryBuilder for Umami {
             client: Arc::new(reqwest::Client::new()),
         };
 
-        battery.record_new_page(initial_page);
+        // Report the initial page view, unless the initial page has been disabled.
+        if let Some(page) = initial_page {
+            battery.record_new_page(page);
+        }
 
         Box::new(battery)
     }

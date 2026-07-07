@@ -62,7 +62,7 @@ impl Medama {
     pub fn new<S: Into<Cow<'static, str>>>(server: S) -> Self {
         Self {
             server: server.into(),
-            page: None,
+            page: Some(Page::default()),
             referrer: None,
         }
     }
@@ -86,6 +86,28 @@ impl Medama {
     /// ```
     pub fn with_initial_page<S: Into<Page>>(mut self, page: S) -> Self {
         self.page = Some(page.into());
+        self
+    }
+
+    /// Configures the Medama integration to not report an initial page view.
+    ///
+    /// By default, the integration reports a load beacon for `/` (or the page configured
+    /// via [`with_initial_page`](Medama::with_initial_page)) as soon as the session
+    /// starts. Call this method if you would rather defer the first page view until you
+    /// explicitly call [`Session::record_new_page`].
+    ///
+    /// ## Example
+    /// ```no_run
+    /// use tracing_batteries::{Session, Medama};
+    ///
+    /// let session = Session::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
+    ///     .with_battery(Medama::new("localhost:8000")
+    ///        .without_initial_page());
+    ///
+    /// session.shutdown();
+    /// ```
+    pub fn without_initial_page(mut self) -> Self {
+        self.page = None;
         self
     }
 
@@ -123,14 +145,17 @@ impl BatteryBuilder for Medama {
             start_time: Mutex::new(chrono::Utc::now()),
             visited_pages: Mutex::new(HashSet::new()),
             unique_user_tracker: UniqueUserTracker::new(metadata.service.clone()),
+            has_active_page: AtomicBool::new(false),
 
             is_enabled: enabled,
             outstanding_requests: Arc::new(AtomicUsize::new(0)),
             client: Arc::new(reqwest::Client::new()),
         };
 
-        // Spawn the load beacon as a background task
-        battery.send_load_beacon(&self.page.unwrap_or("/".into()).url.as_ref());
+        // Report the initial page view, unless the initial page has been disabled.
+        if let Some(page) = self.page {
+            battery.send_load_beacon(page.url.as_ref());
+        }
 
         Box::new(battery)
     }
@@ -149,6 +174,7 @@ struct MedamaAnalyticsBattery {
     start_time: Mutex<chrono::DateTime<chrono::Utc>>,
     visited_pages: Mutex<HashSet<String>>,
     unique_user_tracker: UniqueUserTracker,
+    has_active_page: AtomicBool,
 
     // Request management
     is_enabled: Arc<AtomicBool>,
@@ -218,6 +244,7 @@ impl MedamaAnalyticsBattery {
     }
 
     fn send_load_beacon(&self, page: &str) {
+        self.has_active_page.store(true, Ordering::Relaxed);
         let is_unique = self.unique_user_tracker.is_unique_user();
         let is_visited = if let Ok(mut visited_pages) = self.visited_pages.lock() {
             let is_visited = visited_pages.contains(page);
@@ -265,6 +292,12 @@ impl MedamaAnalyticsBattery {
     }
 
     fn send_unload_beacon(&self) {
+        // Skip the unload beacon when no page view is currently active (for example when
+        // the session was configured without an initial page and none has been recorded).
+        if !self.has_active_page.swap(false, Ordering::Relaxed) {
+            return;
+        }
+
         let duration = chrono::Utc::now()
             .signed_duration_since(*lock_ignoring_poison(&self.start_time))
             .num_milliseconds() as u64;

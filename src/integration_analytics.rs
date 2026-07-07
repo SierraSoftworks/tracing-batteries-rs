@@ -88,7 +88,7 @@ impl Analytics {
     pub fn new<S: Into<Cow<'static, str>>>(server: S) -> Self {
         Self {
             server: server.into(),
-            page: None,
+            page: Some(Page::default()),
             referrer: None,
             hostname: None,
             session_id: generate_beacon_id(),
@@ -139,6 +139,28 @@ impl Analytics {
     /// ```
     pub fn with_initial_page<S: Into<Page>>(mut self, page: S) -> Self {
         self.page = Some(page.into());
+        self
+    }
+
+    /// Configures the Analytics integration to not report an initial page view.
+    ///
+    /// By default, the integration reports a load beacon for `/` (or the page configured
+    /// via [`with_initial_page`](Analytics::with_initial_page)) as soon as the session
+    /// starts. Call this method if you would rather defer the first page view until you
+    /// explicitly call [`Session::record_new_page`](crate::Session::record_new_page).
+    ///
+    /// ## Example
+    /// ```no_run
+    /// use tracing_batteries::{Session, Analytics};
+    ///
+    /// let session = Session::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
+    ///     .with_battery(Analytics::new("https://analytics.example.com")
+    ///        .without_initial_page());
+    ///
+    /// session.shutdown();
+    /// ```
+    pub fn without_initial_page(mut self) -> Self {
+        self.page = None;
         self
     }
 
@@ -235,7 +257,11 @@ impl BatteryBuilder for Analytics {
         context.insert("service.name".to_string(), metadata.service.to_string());
         context.insert("service.version".to_string(), metadata.version.to_string());
 
-        let initial_path = normalize_path(&self.page.unwrap_or_default().url);
+        let initial_page = self.page.map(|page| PageState {
+            beacon: generate_beacon_id(),
+            path: normalize_path(&page.url),
+            start: chrono::Utc::now(),
+        });
 
         let core = Arc::new(AnalyticsCore {
             hit_endpoint: format!("{server}/track/hit"),
@@ -247,11 +273,7 @@ impl BatteryBuilder for Analytics {
             version: metadata.version.to_string(),
             session_id: self.session_id,
             context,
-            page: Mutex::new(PageState {
-                beacon: generate_beacon_id(),
-                path: initial_path,
-                start: chrono::Utc::now(),
-            }),
+            page: Mutex::new(initial_page),
             is_enabled: enabled,
             hook_armed: AtomicBool::new(self.panic_capture),
             panic_reporting: AtomicBool::new(false),
@@ -303,7 +325,7 @@ struct AnalyticsCore {
     session_id: String,
     context: BTreeMap<String, String>,
 
-    page: Mutex<PageState>,
+    page: Mutex<Option<PageState>>,
 
     is_enabled: Arc<AtomicBool>,
     hook_armed: AtomicBool,
@@ -324,13 +346,15 @@ impl AnalyticsCore {
         )
     }
 
-    /// Returns the current page's beacon ID and path.
-    fn current_page(&self) -> (String, String) {
+    /// Returns the current page's beacon ID and path, if a page view is active.
+    fn current_page(&self) -> Option<(String, String)> {
         match self.page.lock() {
-            Ok(page) => (page.beacon.clone(), page.path.clone()),
+            Ok(page) => page
+                .as_ref()
+                .map(|page| (page.beacon.clone(), page.path.clone())),
             Err(_) => {
                 tracing::warn!("Failed to acquire lock on analytics page state");
-                (generate_beacon_id(), "/".to_string())
+                None
             }
         }
     }
@@ -451,7 +475,10 @@ impl AnalyticsCore {
         // try_lock, never lock: the panic may have fired while a battery method held
         // this mutex, and blocking here would deadlock the dying process.
         let (beacon, path) = match self.page.try_lock() {
-            Ok(page) => (Some(page.beacon.clone()), page.path.clone()),
+            Ok(page) => match page.as_ref() {
+                Some(page) => (Some(page.beacon.clone()), page.path.clone()),
+                None => (None, "/".to_string()),
+            },
             Err(_) => (None, "/".to_string()),
         };
 
@@ -566,9 +593,11 @@ impl Battery for AnalyticsBattery {
         self.send_unload_beacon();
 
         if let Ok(mut state) = self.core.page.lock() {
-            state.beacon = generate_beacon_id();
-            state.path = normalize_path(&page.url);
-            state.start = chrono::Utc::now();
+            *state = Some(PageState {
+                beacon: generate_beacon_id(),
+                path: normalize_path(&page.url),
+                start: chrono::Utc::now(),
+            });
         } else {
             tracing::warn!("Failed to acquire lock on analytics page state");
         }
@@ -577,7 +606,10 @@ impl Battery for AnalyticsBattery {
     }
 
     fn record_event(&self, name: &str, properties: &HashMap<String, String>) {
-        let (beacon, path) = self.core.current_page();
+        let (beacon, path) = self
+            .core
+            .current_page()
+            .unwrap_or_else(|| (generate_beacon_id(), "/".to_string()));
 
         let payload = HitPayload {
             b: beacon,
@@ -598,11 +630,14 @@ impl Battery for AnalyticsBattery {
     }
 
     fn record_error(&self, error: &ErrorInfo) {
-        let (beacon, path) = self.core.current_page();
+        let (beacon, path) = match self.core.current_page() {
+            Some((beacon, path)) => (Some(beacon), path),
+            None => (None, "/".to_string()),
+        };
 
         let payload = ExceptionPayload {
             u: self.core.page_url(&path),
-            b: Some(beacon),
+            b: beacon,
             i: Some(self.core.session_id.clone()),
             ty: truncate_chars(error.error_type, MAX_MESSAGE),
             m: truncate_chars(&error.message, MAX_MESSAGE),
@@ -631,7 +666,9 @@ impl Battery for AnalyticsBattery {
 
 impl AnalyticsBattery {
     fn send_load_beacon(&self) {
-        let (beacon, path) = self.core.current_page();
+        let Some((beacon, path)) = self.core.current_page() else {
+            return;
+        };
         let (unique_visit, unique_page) = self.tracker.record_page_visit(&path);
 
         let payload = HitPayload {
@@ -654,7 +691,10 @@ impl AnalyticsBattery {
 
     fn send_unload_beacon(&self) {
         let (beacon, path, start) = match self.core.page.lock() {
-            Ok(page) => (page.beacon.clone(), page.path.clone(), page.start),
+            Ok(page) => match page.as_ref() {
+                Some(page) => (page.beacon.clone(), page.path.clone(), page.start),
+                None => return,
+            },
             Err(_) => {
                 tracing::warn!("Failed to acquire lock on analytics page state");
                 return;
