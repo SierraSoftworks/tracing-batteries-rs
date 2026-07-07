@@ -12,12 +12,24 @@ use std::sync::{Arc, Mutex};
 /// You can attach new batteries to the service at any time, however it is expected that these
 /// are attached at the beginning of the application's lifecycle and the session is retained until
 /// the application is ready to exit.
+///
+/// The session is `Send + Sync + 'static`, so it may be shared freely across threads by the
+/// hosting application — for example behind an [`Arc`], or as a `&'static Session` — allowing
+/// any part of the application to record events through it.
 pub struct Session {
     pub(crate) metadata: Metadata,
     pub(crate) batteries: Vec<Box<dyn Battery>>,
     pub(crate) page_stack: Mutex<Vec<Page>>,
     pub(crate) enabled: Arc<AtomicBool>,
 }
+
+// Hosting applications are encouraged to share the session across threads, so a change
+// which regresses its `Send + Sync + 'static` guarantee (for example a battery gaining
+// thread-local state) must fail to compile rather than break downstream consumers.
+const _: () = {
+    const fn assert_shareable<T: Send + Sync + 'static>() {}
+    assert_shareable::<Session>();
+};
 
 impl Session {
     /// Starts the process of initializing a new telemetry session for the provided application.

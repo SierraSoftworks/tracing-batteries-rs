@@ -1,14 +1,13 @@
-use crate::{Battery, BatteryBuilder, Metadata};
+use crate::{Battery, BatteryBuilder, Metadata, lock_ignoring_poison};
 use crate::{Page, prelude::*};
 use radix_fmt::radix;
 use rand::random;
 use sha2::Digest;
 use std::borrow::Cow;
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::env::consts::{ARCH, OS};
 use std::sync::{
-    Arc,
+    Arc, Mutex,
     atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 use std::time::Duration;
@@ -121,12 +120,12 @@ impl BatteryBuilder for Umami {
 
             metadata: metadata.clone(),
 
-            page: RefCell::new(initial_page.clone()),
-            referrer: RefCell::new("".into()),
+            page: Mutex::new(initial_page.clone()),
+            referrer: Mutex::new("".into()),
 
             cache: Arc::new(RwLock::new(None)),
             disabled: Arc::new(AtomicBool::new(false)),
-            identity: RefCell::new(unique_user.identifier()),
+            identity: Mutex::new(unique_user.identifier()),
             is_enabled: enabled,
             outstanding_requests: Arc::new(AtomicUsize::new(0)),
             client: Arc::new(reqwest::Client::new()),
@@ -146,12 +145,12 @@ struct UmamiBattery {
     // Configuration from metadata
     metadata: Metadata,
 
-    // Internal state tracking
-    page: RefCell<Page>,
-    referrer: RefCell<Cow<'static, str>>,
+    // Internal state tracking (locked rather than RefCell so the battery is `Sync`)
+    page: Mutex<Page>,
+    referrer: Mutex<Cow<'static, str>>,
     cache: Arc<RwLock<Option<String>>>,
     disabled: Arc<AtomicBool>,
-    identity: RefCell<String>,
+    identity: Mutex<String>,
 
     // Request management
     is_enabled: Arc<AtomicBool>,
@@ -161,8 +160,8 @@ struct UmamiBattery {
 
 impl Battery for UmamiBattery {
     fn record_new_page<'a>(&self, page: Page) {
-        *self.page.borrow_mut() = page.clone();
-        *self.referrer.borrow_mut() = page.title.clone().unwrap_or_default();
+        *lock_ignoring_poison(&self.page) = page.clone();
+        *lock_ignoring_poison(&self.referrer) = page.title.clone().unwrap_or_default();
 
         let payload = self.build_payload();
         self.send_request(UmamiEvent::event(payload));
@@ -191,13 +190,13 @@ impl Battery for UmamiBattery {
 
 impl UmamiBattery {
     fn build_payload(&self) -> UmamiEventPayload {
-        let page = self.page.borrow();
-        let referrer = self.referrer.borrow().to_string();
+        let page = lock_ignoring_poison(&self.page).clone();
+        let referrer = lock_ignoring_poison(&self.referrer).to_string();
         UmamiEventPayload {
             website: self.website_id.to_string(),
             hostname: format!("{}.app", self.metadata.service),
             screen: "0x0".to_string(), // Screen resolution is not applicable in this context
-            id: Some(self.identity.borrow().clone()),
+            id: Some(lock_ignoring_poison(&self.identity).clone()),
             language: sys_locale::get_locale().unwrap_or_else(|| "en".to_string()),
             url: page.url.clone().to_string(),
             referrer,

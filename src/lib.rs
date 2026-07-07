@@ -34,6 +34,16 @@ pub use integration_sentry::*;
 #[cfg(feature = "umami")]
 pub use integration_umami::*;
 
+/// Acquires a mutex guard even when the mutex has been poisoned by a panic on
+/// another thread. Battery state protected this way is plain data which remains
+/// valid across a mid-update panic, and telemetry must never take the hosting
+/// application down with it.
+pub(crate) fn lock_ignoring_poison<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// A trait which is implemented by integration builders, allowing them to be used with this library.
 ///
 /// This trait should be implemented on a builder object which will be
@@ -61,7 +71,12 @@ pub trait BatteryBuilder {
 /// notifications about errors and to be shut down when the process is exiting.
 ///
 /// This trait should be implemented on the type which is returned by the [`BatteryBuilder::setup`] method.
-pub trait Battery {
+///
+/// Batteries are required to be [`Send`] and [`Sync`] so that the [`Session`] holding them
+/// is itself `Send + Sync + 'static` and can be shared across threads by the hosting
+/// application (for example behind an [`Arc`], or as a `&'static Session`). Use interior
+/// mutability primitives like [`std::sync::Mutex`] or atomics for any internal state.
+pub trait Battery: Send + Sync {
     /// Called whenever the [`Session::record_new_page`] method is called, allowing the integration
     /// to report that a new page view has started (and finish any existing page views which are
     /// currently active). Only one page view can be active at a time, so this method should

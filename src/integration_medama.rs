@@ -1,11 +1,10 @@
-use crate::{Battery, BatteryBuilder, Metadata};
+use crate::{Battery, BatteryBuilder, Metadata, lock_ignoring_poison};
 use crate::{Page, prelude::*};
 use chrono::NaiveDate;
 use radix_fmt::radix;
 use rand::random;
 use sha2::Digest;
 use std::borrow::Cow;
-use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::env::consts::{ARCH, OS};
 use std::sync::{
@@ -120,8 +119,8 @@ impl BatteryBuilder for Medama {
 
             metadata: metadata.clone(),
 
-            beacon_id: RefCell::new(MedamaAnalyticsBattery::generate_beacon_id()),
-            start_time: RefCell::new(chrono::Utc::now()),
+            beacon_id: Mutex::new(MedamaAnalyticsBattery::generate_beacon_id()),
+            start_time: Mutex::new(chrono::Utc::now()),
             visited_pages: Mutex::new(HashSet::new()),
             unique_user_tracker: UniqueUserTracker::new(metadata.service.clone()),
 
@@ -145,9 +144,9 @@ struct MedamaAnalyticsBattery {
     // Configurations from metadata
     metadata: Metadata,
 
-    // Internal state tracking
-    beacon_id: RefCell<String>,
-    start_time: RefCell<chrono::DateTime<chrono::Utc>>,
+    // Internal state tracking (locked rather than RefCell so the battery is `Sync`)
+    beacon_id: Mutex<String>,
+    start_time: Mutex<chrono::DateTime<chrono::Utc>>,
     visited_pages: Mutex<HashSet<String>>,
     unique_user_tracker: UniqueUserTracker,
 
@@ -160,7 +159,7 @@ struct MedamaAnalyticsBattery {
 impl Battery for MedamaAnalyticsBattery {
     fn record_new_page<'a>(&self, page: Page) {
         self.send_unload_beacon();
-        self.beacon_id.replace(Self::generate_beacon_id());
+        *lock_ignoring_poison(&self.beacon_id) = Self::generate_beacon_id();
         self.send_load_beacon(&page.url);
     }
 
@@ -229,7 +228,7 @@ impl MedamaAnalyticsBattery {
             false
         };
 
-        self.start_time.replace(chrono::Utc::now());
+        *lock_ignoring_poison(&self.start_time) = chrono::Utc::now();
 
         let mut data: HashMap<String, String> = self
             .metadata
@@ -247,7 +246,7 @@ impl MedamaAnalyticsBattery {
         );
 
         let payload = MedamaLoadBeacon {
-            b: self.beacon_id.borrow().clone(),
+            b: lock_ignoring_poison(&self.beacon_id).clone(),
             e: "load",
             u: format!(
                 "https://{}.app{}?utm_source={OS}&utm_medium={ARCH}&utm_campaign={}",
@@ -267,11 +266,11 @@ impl MedamaAnalyticsBattery {
 
     fn send_unload_beacon(&self) {
         let duration = chrono::Utc::now()
-            .signed_duration_since(*self.start_time.borrow())
+            .signed_duration_since(*lock_ignoring_poison(&self.start_time))
             .num_milliseconds() as u64;
 
         let payload = MedamaUnloadBeacon {
-            b: self.beacon_id.borrow().clone(),
+            b: lock_ignoring_poison(&self.beacon_id).clone(),
             e: "unload",
             m: duration,
         };
@@ -281,7 +280,7 @@ impl MedamaAnalyticsBattery {
 
     fn send_custom_event(&self, data: HashMap<String, String>) {
         let payload = MedamaCustomEvent {
-            b: self.beacon_id.borrow().clone(),
+            b: lock_ignoring_poison(&self.beacon_id).clone(),
             e: "custom",
             g: format!("{}.app", self.metadata.service.to_lowercase()),
             d: data,
