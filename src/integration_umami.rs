@@ -198,9 +198,16 @@ impl Battery for UmamiBattery {
 
     fn record_error(&self, error: &crate::ErrorInfo) {
         // Umami does not have a built-in concept of "errors", so we will just record them as events with the error message as the event name
+        let mut metadata = HashMap::from([
+            ("error_type".to_string(), error.error_type.to_string()),
+            ("message".to_string(), error.message.clone()),
+            ("causes".to_string(), error.causes.join(" -> ")),
+        ]);
+        metadata.extend(error.metadata.iter().map(|(k, v)| (k.to_string(), v.clone())));
+
         let payload = self.build_payload().with_event(
             "error",
-            HashMap::from([("message".to_string(), error.message.clone())]),
+            metadata,
         );
 
         self.send_request(UmamiEvent::event(payload));
