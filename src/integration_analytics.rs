@@ -97,24 +97,24 @@ impl Analytics {
     }
 
     /// Generates a new random session ID for use with the Analytics integration.
-    /// 
+    ///
     /// This is intended for advanced use cases where you need to correlate telemetry across different
     /// instances of your service, for example when propagating session IDs between parent and child
     /// processes.
-    /// 
+    ///
     /// ## Example
     /// ```no_run
     /// use tracing_batteries::{Session, Analytics};
     ///
     /// let session_id = Analytics::session_id();
     /// println!("Generated session ID: {}", session_id);
-    /// 
+    ///
     /// let session = Session::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
     ///   .with_battery(Analytics::new("https://analytics.example.com")
     ///     .with_session_id(session_id));
-    /// 
+    ///
     /// // Your code which propagates the session ID to child processes or other services goes here
-    /// 
+    ///
     /// session.shutdown();
     /// ```
     pub fn session_id() -> String {
@@ -231,7 +231,7 @@ impl Analytics {
     }
 
     /// Configures the session ID which should be used for the telemetry session.
-    /// 
+    ///
     /// This allows you to provide a custom session ID (for example, an OpenTelemetry trace ID)
     /// which will be used to correlate telemetry across multiple sessions. If not set, a random
     /// session ID will be generated for each session.
@@ -635,6 +635,14 @@ impl Battery for AnalyticsBattery {
             None => (None, "/".to_string()),
         };
 
+        let mut metadata = self.core.context.clone();
+        metadata.extend(error.metadata.iter().map(|(key, value)| {
+            (
+                truncate_chars(key, MAX_METADATA_KEY),
+                truncate_chars(value, MAX_METADATA_VALUE),
+            )
+        }));
+
         let payload = ExceptionPayload {
             u: self.core.page_url(&path),
             b: beacon,
@@ -645,7 +653,7 @@ impl Battery for AnalyticsBattery {
             h: true,
             v: Some(self.core.version.clone()),
             fp: None,
-            d: Some(self.core.context.clone()),
+            d: Some(metadata),
         };
 
         self.core
