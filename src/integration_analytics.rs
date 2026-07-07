@@ -441,7 +441,7 @@ impl AnalyticsCore {
         let payload = ExceptionPayload {
             u: self.page_url(&path),
             b: beacon,
-            sid: Some(self.session_id.clone()),
+            i: Some(self.session_id.clone()),
             ty: "panic".to_string(),
             m: truncate_chars(&message, MAX_MESSAGE),
             s: Some(truncate_chars(&stack, MAX_STACK)),
@@ -546,7 +546,7 @@ impl Battery for AnalyticsBattery {
 
         let payload = HitPayload {
             b: beacon,
-            s: Some(self.core.session_id.clone()),
+            i: Some(self.core.session_id.clone()),
             e: "custom",
             u: self.core.page_url(&path),
             r: None,
@@ -568,7 +568,7 @@ impl Battery for AnalyticsBattery {
         let payload = ExceptionPayload {
             u: self.core.page_url(&path),
             b: Some(beacon),
-            sid: Some(self.core.session_id.clone()),
+            i: Some(self.core.session_id.clone()),
             ty: truncate_chars(error.error_type, MAX_MESSAGE),
             m: truncate_chars(&error.message, MAX_MESSAGE),
             s: compose_stack(error),
@@ -601,7 +601,7 @@ impl AnalyticsBattery {
 
         let payload = HitPayload {
             b: beacon,
-            s: Some(self.core.session_id.clone()),
+            i: Some(self.core.session_id.clone()),
             e: "load",
             u: self.core.page_url(&path),
             r: self.referrer.clone(),
@@ -632,7 +632,7 @@ impl AnalyticsBattery {
 
         let payload = HitPayload {
             b: beacon,
-            s: Some(self.core.session_id.clone()),
+            i: Some(self.core.session_id.clone()),
             e: "unload",
             u: self.core.page_url(&path),
             r: None,
@@ -832,7 +832,7 @@ struct HitPayload {
     b: String,
     // The session ID linking every event of this application run
     #[serde(skip_serializing_if = "Option::is_none")]
-    s: Option<String>,
+    i: Option<String>,
     // The event kind: "load", "unload" or "custom"
     e: &'static str,
     // The full URL of the page being tracked (required on every kind)
@@ -868,9 +868,9 @@ struct ExceptionPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     b: Option<String>,
     // The session ID linking the exception to this application run's session
-    // trace (`s` is taken by the stack on this endpoint)
+    // trace (same `i` key as on hits; `s` is taken by the stack here)
     #[serde(skip_serializing_if = "Option::is_none")]
-    sid: Option<String>,
+    i: Option<String>,
     // The exception type name
     ty: String,
     // The exception message
@@ -956,7 +956,7 @@ mod tests {
     fn hit_payload_wire_format() {
         let payload = HitPayload {
             b: "beacon123".to_string(),
-            s: Some("session123".to_string()),
+            i: Some("session123".to_string()),
             e: "load",
             u: "https://example.app/home?utm_campaign=1.0.0".to_string(),
             r: None,
@@ -973,7 +973,7 @@ mod tests {
             value,
             serde_json::json!({
                 "b": "beacon123",
-                "s": "session123",
+                "i": "session123",
                 "e": "load",
                 "u": "https://example.app/home?utm_campaign=1.0.0",
                 "q": true,
@@ -984,7 +984,7 @@ mod tests {
 
         let payload = HitPayload {
             b: "beacon123".to_string(),
-            s: Some("session123".to_string()),
+            i: Some("session123".to_string()),
             e: "custom",
             u: "https://example.app/".to_string(),
             r: None,
@@ -1001,7 +1001,7 @@ mod tests {
             value,
             serde_json::json!({
                 "b": "beacon123",
-                "s": "session123",
+                "i": "session123",
                 "e": "custom",
                 "u": "https://example.app/",
                 "q": false,
@@ -1017,7 +1017,7 @@ mod tests {
         let payload = ExceptionPayload {
             u: "https://example.app/".to_string(),
             b: Some("beacon123".to_string()),
-            sid: Some("session123".to_string()),
+            i: Some("session123".to_string()),
             ty: "std::io::Error".to_string(),
             m: "file not found".to_string(),
             s: None,
@@ -1033,7 +1033,7 @@ mod tests {
             serde_json::json!({
                 "u": "https://example.app/",
                 "b": "beacon123",
-                "sid": "session123",
+                "i": "session123",
                 "ty": "std::io::Error",
                 "m": "file not found",
                 "h": true,
