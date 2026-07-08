@@ -1156,7 +1156,11 @@ mod tests {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind test listener");
         let address = listener.local_addr().expect("listener address");
 
+        // Telemetry is disabled by default in debug builds (which is how tests run), so the
+        // panic hook's `is_enabled` guard would short-circuit and never deliver a report.
+        // Opt into debug-build telemetry so the reporting path is actually exercised.
         let session = Session::new("test_panic_reporting", "0.0.1")
+            .with_debug_builds()
             .with_battery(Analytics::new(format!("http://{address}")));
 
         let result = std::thread::spawn(|| panic!("intentional reported panic")).join();

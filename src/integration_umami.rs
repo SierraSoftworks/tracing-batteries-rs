@@ -203,12 +203,14 @@ impl Battery for UmamiBattery {
             ("message".to_string(), error.message.clone()),
             ("causes".to_string(), error.causes.join(" -> ")),
         ]);
-        metadata.extend(error.metadata.iter().map(|(k, v)| (k.to_string(), v.clone())));
-
-        let payload = self.build_payload().with_event(
-            "error",
-            metadata,
+        metadata.extend(
+            error
+                .metadata
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone())),
         );
+
+        let payload = self.build_payload().with_event("error", metadata);
 
         self.send_request(UmamiEvent::event(payload));
     }

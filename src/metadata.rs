@@ -38,22 +38,22 @@ impl Metadata {
     }
 
     /// Enables emission of telemetry events when running under debug builds.
-    /// 
+    ///
     /// This method can be used to override the default behavior of the telemetry system,
     /// which is to disable telemetry events when running under debug builds. This is useful for
     /// development and testing, as it allows developers to see telemetry events without having to
     /// build a release version of the application.
-    /// 
+    ///
     /// ## Example
     /// ```no_run
     /// use tracing_batteries::{Session, Sentry};
-    /// 
+    ///
     /// let session = Session::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
     ///    .with_debug_builds()
     ///    .with_battery(Sentry::new("https://username:password@ingest.sentry.io/project"));
-    /// 
+    ///
     /// // Your code goes here...
-    /// 
+    ///
     /// session.shutdown();
     /// ```
     pub fn with_debug_builds(mut self) -> Self {

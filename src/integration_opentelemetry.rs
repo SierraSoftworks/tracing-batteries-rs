@@ -34,6 +34,23 @@ const KEY_NOT_PARSED_PLACEHOLDER: &'static str = "x-key-not-parsed-correctly";
 /// collector. The endpoint may either be a gRPC or HTTP endpoint, and additional headers may
 /// be used to configure the connection (these are often used for authentication).
 ///
+/// ## Resource attributes
+///
+/// The telemetry resource is primarily populated from the session's [`Metadata`](crate::Metadata)
+/// (its service name, version, host information, and any context added through
+/// [`Metadata::with_context`](crate::Metadata::with_context)). In addition to this, you can attach
+/// custom resource attributes (or override the ones derived from the session metadata) by setting
+/// the standard `OTEL_RESOURCE_ATTRIBUTES` environment variable to a comma separated list of
+/// `key=value` pairs, for example:
+///
+/// ```bash
+/// OTEL_RESOURCE_ATTRIBUTES=service.namespace=team-a,deployment.environment=production
+/// ```
+///
+/// Attributes provided through the environment variable take precedence over those derived from
+/// the session metadata, matching the behaviour of the other `OTEL_*` environment variables
+/// supported by this integration.
+///
 /// ## Example (gRPC)
 /// ```no_run
 /// use tracing_batteries::{Session, OpenTelemetry, OpenTelemetryProtocol};
@@ -371,6 +388,14 @@ impl OpenTelemetry {
     }
 
     fn build_resource(&self, metadata: &crate::Metadata) -> Resource {
+        self.build_resource_with_env(metadata, Self::env_resource_attributes())
+    }
+
+    fn build_resource_with_env(
+        &self,
+        metadata: &crate::Metadata,
+        env_attributes: Vec<opentelemetry::KeyValue>,
+    ) -> Resource {
         let mut resource_metadata = vec![
             opentelemetry::KeyValue::new("service.version", metadata.version.clone()),
             opentelemetry::KeyValue::new("host.os", std::env::consts::OS),
@@ -384,7 +409,45 @@ impl OpenTelemetry {
         Resource::builder()
             .with_service_name(metadata.service.clone())
             .with_attributes(resource_metadata)
+            // Resource attributes provided through the `OTEL_RESOURCE_ATTRIBUTES` environment
+            // variable are applied last so that they can add to (or override) the session-provided
+            // metadata at deploy time. This mirrors the precedence of the other `OTEL_*` environment
+            // variables handled by this integration (endpoint, headers, protocol, and sampler).
+            .with_attributes(env_attributes)
             .build()
+    }
+
+    /// Reads custom resource attributes from the `OTEL_RESOURCE_ATTRIBUTES` environment variable.
+    ///
+    /// The variable is parsed according to the OpenTelemetry specification as a comma separated list
+    /// of `key=value` pairs (e.g. `service.namespace=team-a,deployment.environment=production`).
+    fn env_resource_attributes() -> Vec<opentelemetry::KeyValue> {
+        Self::parse_resource_attributes(
+            std::env::var("OTEL_RESOURCE_ATTRIBUTES")
+                .unwrap_or_default()
+                .as_str(),
+        )
+    }
+
+    /// Parses a comma separated list of `key=value` resource attributes.
+    ///
+    /// Whitespace surrounding keys and values is ignored, and malformed entries (those without an
+    /// `=` separator, or with an empty key) are skipped rather than producing invalid attributes.
+    fn parse_resource_attributes(raw: &str) -> Vec<opentelemetry::KeyValue> {
+        raw.split_terminator(',')
+            .filter_map(|entry| {
+                let (key, value) = entry.split_once('=')?;
+                let key = key.trim();
+                if key.is_empty() {
+                    return None;
+                }
+
+                Some(opentelemetry::KeyValue::new(
+                    key.to_owned(),
+                    value.trim().to_owned(),
+                ))
+            })
+            .collect()
     }
 
     fn build_sampler() -> Sampler {
@@ -532,5 +595,66 @@ mod test {
         );
 
         session.shutdown();
+    }
+
+    #[test]
+    fn parses_resource_attributes() {
+        let attributes = OpenTelemetry::parse_resource_attributes(
+            "service.namespace=team-a, deployment.environment = production ,empty=,=novalue,malformed",
+        );
+
+        let parsed: std::collections::HashMap<String, String> = attributes
+            .into_iter()
+            .map(|kv| (kv.key.as_str().to_owned(), kv.value.to_string()))
+            .collect();
+
+        // Well formed pairs are parsed, with surrounding whitespace trimmed from keys and values.
+        assert_eq!(parsed.get("service.namespace"), Some(&"team-a".to_owned()));
+        assert_eq!(
+            parsed.get("deployment.environment"),
+            Some(&"production".to_owned())
+        );
+        // An explicit empty value is preserved.
+        assert_eq!(parsed.get("empty"), Some(&"".to_owned()));
+        // Entries with an empty key, or without an `=` separator, are ignored.
+        assert_eq!(parsed.get(""), None);
+        assert!(!parsed.contains_key("malformed"));
+    }
+
+    #[test]
+    fn resource_merges_env_attributes() {
+        let metadata = Session::new("example", "0.0.1").with_context("environment", "production");
+
+        let resource = OpenTelemetry::new("localhost:4317").build_resource_with_env(
+            &metadata,
+            vec![
+                opentelemetry::KeyValue::new("deployment.environment", "staging"),
+                opentelemetry::KeyValue::new("service.version", "9.9.9"),
+            ],
+        );
+
+        let get = |key: &'static str| resource.get(&opentelemetry::Key::from_static_str(key));
+
+        // Session-provided metadata is present on the resource.
+        assert_eq!(
+            get("service.name"),
+            Some(opentelemetry::Value::from("example"))
+        );
+        assert_eq!(
+            get("environment"),
+            Some(opentelemetry::Value::from("production"))
+        );
+
+        // Custom attributes provided through the environment are added to the resource.
+        assert_eq!(
+            get("deployment.environment"),
+            Some(opentelemetry::Value::from("staging"))
+        );
+
+        // Environment attributes take precedence over the session metadata on conflicts.
+        assert_eq!(
+            get("service.version"),
+            Some(opentelemetry::Value::from("9.9.9"))
+        );
     }
 }

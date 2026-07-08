@@ -169,17 +169,17 @@ impl Session {
     }
 
     /// Records that an error has occurred within the application, reporting it to any registered batteries.
-    /// 
+    ///
     /// This method is similar to [`Session::record_error`], but allows the caller to provide additional metadata
     /// about the error which will be reported to the telemetry system.
-    /// 
+    ///
     /// ## Example
     /// ```no_run
     /// use tracing_batteries::{Session, Sentry, ErrorInfo};
-    /// 
+    ///
     /// let session = Session::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
     ///  .with_battery(Sentry::new("https://yourdsn@sentry.example.com"));
-    /// 
+    ///
     /// match std::fs::read_to_string("nonexistent-file.txt") {
     ///   Ok(_) => {}
     ///   Err(e) => {
@@ -262,7 +262,7 @@ impl Drop for PageMarker<'_> {
             if let Some(last_page) = stack.last().cloned() {
                 for battery in self.0.batteries.iter() {
                     battery.record_new_page(last_page.clone());
-                }   
+                }
             }
         } else {
             tracing::warn!("Failed to lock page stack, unable to drop page marker");

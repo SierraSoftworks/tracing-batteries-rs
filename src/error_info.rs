@@ -1,4 +1,7 @@
-use std::{backtrace::{Backtrace, BacktraceStatus}, collections::HashMap};
+use std::{
+    backtrace::{Backtrace, BacktraceStatus},
+    collections::HashMap,
+};
 
 /// Rich context about an error reported via [`Session::record_error`](crate::Session::record_error).
 ///
@@ -72,7 +75,7 @@ impl<'a> ErrorInfo<'a> {
     /// Disables the backtrace for this error info, which may be useful for errors which are
     /// expected to occur frequently and for which a backtrace is not useful (for example,
     /// a "not found" error when looking up a resource by ID).
-    /// 
+    ///
     /// Note that this may impact the ability of the telemetry system to associate different
     /// errors with the same root cause, as the backtrace is commonly used to identify the call
     /// site of the error.
