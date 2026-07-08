@@ -26,6 +26,8 @@ pub struct Metadata {
     pub version: Cow<'static, str>,
 
     pub context: HashMap<&'static str, Cow<'static, str>>,
+
+    pub enabled_by_default: bool,
 }
 
 impl Metadata {
@@ -35,14 +37,43 @@ impl Metadata {
         self
     }
 
+    /// Enables emission of telemetry events when running under debug builds.
+    /// 
+    /// This method can be used to override the default behavior of the telemetry system,
+    /// which is to disable telemetry events when running under debug builds. This is useful for
+    /// development and testing, as it allows developers to see telemetry events without having to
+    /// build a release version of the application.
+    /// 
+    /// ## Example
+    /// ```no_run
+    /// use tracing_batteries::{Session, Sentry};
+    /// 
+    /// let session = Session::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
+    ///    .with_debug_builds()
+    ///    .with_battery(Sentry::new("https://username:password@ingest.sentry.io/project"));
+    /// 
+    /// // Your code goes here...
+    /// 
+    /// session.shutdown();
+    /// ```
+    pub fn with_debug_builds(mut self) -> Self {
+        #[cfg(debug_assertions)]
+        {
+            self.enabled_by_default = true;
+        }
+        self
+    }
+
     /// Attaches a new battery to the telemetry session, integrating the requested telemetry
     /// provider into the application.
     pub fn with_battery<B: BatteryBuilder>(self, battery: B) -> Session {
+        let enabled = AtomicBool::new(self.enabled_by_default);
+
         Session {
             metadata: self,
             batteries: Vec::new(),
             page_stack: Mutex::new(Vec::new()),
-            enabled: Arc::new(AtomicBool::new(true)),
+            enabled: Arc::new(enabled),
         }
         .with_battery(battery)
     }

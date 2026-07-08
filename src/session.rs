@@ -57,6 +57,11 @@ impl Session {
             service: service.into(),
             version: version.into(),
             context: HashMap::new(),
+
+            #[cfg(debug_assertions)]
+            enabled_by_default: false,
+            #[cfg(not(debug_assertions))]
+            enabled_by_default: true,
         }
     }
 
