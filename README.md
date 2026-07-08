@@ -122,6 +122,21 @@ fn main() {
 }
 ```
 
+The OpenTelemetry resource is populated from your `Session`'s metadata (its service name,
+version, host information, and any `.with_context(...)` values). You can attach additional
+custom resource attributes, or override the ones derived from the session metadata, by setting
+the standard [`OTEL_RESOURCE_ATTRIBUTES`](https://opentelemetry.io/docs/specs/otel/resource/sdk/#specifying-resource-information-via-an-environment-variable)
+environment variable to a comma separated list of `key=value` pairs:
+
+```bash
+OTEL_RESOURCE_ATTRIBUTES=service.namespace=team-a,deployment.environment=production
+```
+
+Attributes provided through the environment variable take precedence over those derived from the
+session metadata, consistent with the other `OTEL_*` environment variables (such as
+`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_PROTOCOL`, and
+`OTEL_TRACES_SAMPLER`) that this integration understands.
+
 ### Sentry
 The `Sentry` integration allows you to send session and error information to
 Sentry from within your application.
