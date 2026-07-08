@@ -11,10 +11,10 @@ mod integration_medama;
 mod integration_opentelemetry;
 #[cfg(feature = "sentry")]
 mod integration_sentry;
-#[cfg(feature = "umami")]
-mod integration_umami;
 #[cfg(feature = "testing")]
 mod integration_testing;
+#[cfg(feature = "umami")]
+mod integration_umami;
 mod metadata;
 mod page;
 pub mod prelude;
@@ -33,10 +33,10 @@ pub use integration_medama::*;
 pub use integration_opentelemetry::*;
 #[cfg(feature = "sentry")]
 pub use integration_sentry::*;
-#[cfg(feature = "umami")]
-pub use integration_umami::*;
 #[cfg(feature = "testing")]
 pub use integration_testing::*;
+#[cfg(feature = "umami")]
+pub use integration_umami::*;
 
 /// Acquires a mutex guard even when the mutex has been poisoned by a panic on
 /// another thread. Battery state protected this way is plain data which remains

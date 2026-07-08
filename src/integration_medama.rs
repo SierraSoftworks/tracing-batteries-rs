@@ -195,7 +195,12 @@ impl Battery for MedamaAnalyticsBattery {
             ("error_type".to_string(), error.error_type.to_string()),
             ("causes".to_string(), error.causes.join(" -> ")),
         ]);
-        metadata.extend(error.metadata.iter().map(|(k, v)| (k.to_string(), v.clone())));
+        metadata.extend(
+            error
+                .metadata
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone())),
+        );
 
         self.send_custom_event(metadata);
     }
