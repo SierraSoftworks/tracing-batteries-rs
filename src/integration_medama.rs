@@ -195,6 +195,9 @@ impl Battery for MedamaAnalyticsBattery {
             ("error_type".to_string(), error.error_type.to_string()),
             ("causes".to_string(), error.causes.join(" -> ")),
         ]);
+        if let Some(backtrace) = error.simplified_backtrace() {
+            metadata.insert("backtrace".to_string(), backtrace);
+        }
         metadata.extend(
             error
                 .metadata

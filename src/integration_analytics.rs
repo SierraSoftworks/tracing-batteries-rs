@@ -743,7 +743,7 @@ fn compose_stack(error: &ErrorInfo) -> Option<String> {
         stack.push('\n');
     }
 
-    if let Some(backtrace) = error.backtrace_text() {
+    if let Some(backtrace) = error.simplified_backtrace() {
         if !stack.is_empty() {
             stack.push('\n');
         }

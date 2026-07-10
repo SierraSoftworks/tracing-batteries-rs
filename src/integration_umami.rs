@@ -203,6 +203,9 @@ impl Battery for UmamiBattery {
             ("message".to_string(), error.message.clone()),
             ("causes".to_string(), error.causes.join(" -> ")),
         ]);
+        if let Some(backtrace) = error.simplified_backtrace() {
+            metadata.insert("backtrace".to_string(), backtrace);
+        }
         metadata.extend(
             error
                 .metadata
