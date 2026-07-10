@@ -168,6 +168,23 @@ impl Session {
         error
     }
 
+    /// Records a [`human_errors::Error`] using its native message, cause chain,
+    /// and captured backtraces.
+    ///
+    /// This method is only available when the `human_errors` feature is enabled.
+    #[cfg(feature = "human_errors")]
+    pub fn record_human_error<'a>(
+        &self,
+        error: &'a human_errors::Error,
+    ) -> &'a human_errors::Error {
+        let info = ErrorInfo::from_human_error(error);
+        for battery in &self.batteries {
+            battery.record_error(&info);
+        }
+
+        error
+    }
+
     /// Records that an error has occurred within the application, reporting it to any registered batteries.
     ///
     /// This method is similar to [`Session::record_error`], but allows the caller to provide additional metadata

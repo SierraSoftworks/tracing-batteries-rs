@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 chrono = { version = "0.4.45", optional = true }
 hex = { version = "0.4.3", optional = true }
+human-errors = { version = "0.2.4", optional = true, features = ["backtraces"] }
 iana-time-zone = { version = "0.1.65", optional = true }
 opentelemetry = { version = "0.32.0", optional = true }
 opentelemetry_sdk = { version = "0.32.1", features = [
@@ -95,3 +96,4 @@ umami = [
   "dep:tokio",
 ]
 testing = []
+human_errors = ["dep:human-errors"]
