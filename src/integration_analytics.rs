@@ -469,8 +469,13 @@ impl AnalyticsCore {
         });
 
         // Capture on the panicking thread (before handing off to the sender thread) so
-        // the trace shows the panic site rather than the sender's stack.
-        let backtrace = std::backtrace::Backtrace::force_capture();
+        // the trace shows the panic site rather than the sender's stack. Simplify it with
+        // the same logic used for error backtraces: this strips the panic-dispatch
+        // prologue (the hook and panic runtime frames) that would otherwise sit above the
+        // code that actually panicked.
+        let backtrace = crate::backtraces::simplify_backtrace_text(
+            &std::backtrace::Backtrace::force_capture().to_string(),
+        );
 
         // try_lock, never lock: the panic may have fired while a battery method held
         // this mutex, and blocking here would deadlock the dying process.
@@ -497,7 +502,7 @@ impl AnalyticsCore {
 
         let stack = match &location {
             Some(location) => format!("panicked at {location}\n\n{backtrace}"),
-            None => backtrace.to_string(),
+            None => backtrace,
         };
 
         let payload = ExceptionPayload {

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+mod backtraces;
 mod error_info;
 #[cfg(feature = "analytics")]
 mod integration_analytics;

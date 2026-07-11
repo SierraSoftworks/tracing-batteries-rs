@@ -3,30 +3,13 @@ use std::{
     collections::HashMap,
 };
 
-/// Symbol prefixes whose frames are dropped while they appear contiguously at
-/// the top (innermost end) of a backtrace.
-const INITIAL_SKIP_PREFIXES: &[&str] = &["std::backtrace", "tracing_batteries"];
-
+/// Symbol prefixes stripped from the top of a `human_errors`-captured backtrace, in
+/// addition to the crate's default skip prefixes applied by [`crate::backtraces`].
 #[cfg(feature = "human_errors")]
 const HUMAN_ERRORS_INITIAL_SKIP_PREFIXES: &[&str] = &["std::backtrace::", "human_errors::"];
 
-/// Symbol prefixes whose frames retain their function name but have their file
-/// path (the `at <path>` line) removed to reduce noise.
-const HIDE_PATH_PREFIXES: &[&str] = &["core::", "std::"];
-
-/// The standard library symbol which marks the boundary between user code and
-/// the runtime/OS bootstrap that invoked it.
-const RUNTIME_BOUNDARY_MARKER: &str = "std::sys::backtrace::__rust_begin_short_backtrace";
-
 #[cfg(feature = "human_errors")]
 const HUMAN_ERRORS_BACKTRACE_METADATA_KEY: &str = "human_errors.backtrace";
-
-/// A single frame parsed from a backtrace's textual rendering.
-struct BacktraceFrame<'a> {
-    index: usize,
-    symbol: &'a str,
-    location: Option<&'a str>,
-}
 
 /// Rich context about an error reported via [`Session::record_error`](crate::Session::record_error).
 ///
@@ -102,7 +85,7 @@ impl<'a> ErrorInfo<'a> {
         }
 
         (self.backtrace.status() == BacktraceStatus::Captured)
-            .then(|| simplify_backtrace_text(&self.backtrace.to_string()))
+            .then(|| crate::backtraces::simplify_backtrace_text(&self.backtrace.to_string()))
     }
 
     /// Captures an [`ErrorInfo`] from a [`human_errors::Error`] while preserving
@@ -164,60 +147,6 @@ impl<'a, E: std::error::Error> From<&'a E> for ErrorInfo<'a> {
     }
 }
 
-/// Applies the backtrace simplification rules to the textual rendering of a
-/// backtrace.
-fn simplify_backtrace_text(raw: &str) -> String {
-    simplify_backtrace_text_with_prefixes(raw, INITIAL_SKIP_PREFIXES)
-}
-
-fn simplify_backtrace_text_with_prefixes(raw: &str, initial_skip_prefixes: &[&str]) -> String {
-    let frames = parse_frames(raw);
-    if frames.is_empty() {
-        return raw.to_string();
-    }
-
-    // Drop runtime/OS bootstrap frames at the bottom (outermost end).
-    let end = frames
-        .iter()
-        .position(|frame| frame.symbol.contains(RUNTIME_BOUNDARY_MARKER))
-        .unwrap_or(frames.len());
-    let bottom_skipped = frames.len() - end;
-
-    // Drop capture and crate-internal frames at the top (innermost end).
-    let start = frames[..end]
-        .iter()
-        .position(|frame| !starts_with_any(frame.symbol, initial_skip_prefixes))
-        .unwrap_or(end);
-    let top_skipped = start;
-
-    let frames = &frames[start..end];
-    if frames.is_empty() {
-        return raw.to_string();
-    }
-
-    let mut output = String::new();
-
-    if top_skipped > 0 {
-        output.push_str(&format!("    ... skipped {top_skipped} frames ...\n"));
-    }
-
-    for frame in frames {
-        output.push_str(&format!("{:>2}: {}\n", frame.index, frame.symbol));
-
-        if let Some(location) = frame.location {
-            if !starts_with_any(frame.symbol, HIDE_PATH_PREFIXES) {
-                output.push_str(&format!("    {location}\n"));
-            }
-        }
-    }
-
-    if bottom_skipped > 0 {
-        output.push_str(&format!("    ... skipped {bottom_skipped} frames ...\n"));
-    }
-
-    output
-}
-
 #[cfg(feature = "human_errors")]
 fn collect_human_error_backtraces(error: &human_errors::Error) -> Option<String> {
     use std::error::Error as _;
@@ -227,7 +156,7 @@ fn collect_human_error_backtraces(error: &human_errors::Error) -> Option<String>
     if let Some(backtrace) = captured_backtrace(error.backtrace()) {
         backtraces.push((
             error.description(),
-            simplify_backtrace_text_with_prefixes(
+            crate::backtraces::simplify_backtrace_text_with_prefixes(
                 &backtrace.to_string(),
                 HUMAN_ERRORS_INITIAL_SKIP_PREFIXES,
             ),
@@ -240,7 +169,7 @@ fn collect_human_error_backtraces(error: &human_errors::Error) -> Option<String>
             if let Some(backtrace) = captured_backtrace(human_error.backtrace()) {
                 backtraces.push((
                     human_error.description(),
-                    simplify_backtrace_text_with_prefixes(
+                    crate::backtraces::simplify_backtrace_text_with_prefixes(
                         &backtrace.to_string(),
                         HUMAN_ERRORS_INITIAL_SKIP_PREFIXES,
                     ),
@@ -267,43 +196,6 @@ fn collect_human_error_backtraces(error: &human_errors::Error) -> Option<String>
 #[cfg(feature = "human_errors")]
 fn captured_backtrace(backtrace: Option<&Backtrace>) -> Option<&Backtrace> {
     backtrace.filter(|backtrace| backtrace.status() == BacktraceStatus::Captured)
-}
-
-/// Parses the textual rendering of a backtrace into individual frames.
-fn parse_frames(raw: &str) -> Vec<BacktraceFrame<'_>> {
-    let mut frames = Vec::new();
-    let mut lines = raw.lines().peekable();
-
-    while let Some(line) = lines.next() {
-        let Some((index, symbol)) = parse_frame(line.trim_start()) else {
-            continue;
-        };
-
-        let location = match lines.peek() {
-            Some(next) if next.trim_start().starts_with("at ") => {
-                Some(lines.next().unwrap().trim_start())
-            }
-            _ => None,
-        };
-
-        frames.push(BacktraceFrame {
-            index,
-            symbol,
-            location,
-        });
-    }
-
-    frames
-}
-
-/// Parses a frame header line of the form `<index>: <symbol>`.
-fn parse_frame(line: &str) -> Option<(usize, &str)> {
-    let (index, symbol) = line.split_once(": ")?;
-    Some((index.parse().ok()?, symbol))
-}
-
-fn starts_with_any(symbol: &str, prefixes: &[&str]) -> bool {
-    prefixes.iter().any(|prefix| symbol.starts_with(prefix))
 }
 
 #[cfg(test)]
@@ -359,44 +251,6 @@ mod tests {
             info.simplified_backtrace().is_some(),
             "a simplified backtrace should be available when a backtrace is captured"
         );
-    }
-
-    #[test]
-    fn simplify_backtrace_text_drops_noise_and_hides_std_paths() {
-        let raw = "\
-   0: std::backtrace_rs::backtrace::libunwind::trace
-             at /rustc/library/std/src/backtrace.rs:1
-   1: std::backtrace::Backtrace::create
-             at /rustc/library/std/src/backtrace.rs:2
-   2: tracing_batteries::error_info::ErrorInfo::new
-             at ./src/error_info.rs:10
-   3: my_app::do_work
-             at ./src/main.rs:20
-   4: core::ops::function::FnOnce::call_once
-             at /rustc/library/core/src/ops/function.rs:250
-   5: std::sys::backtrace::__rust_begin_short_backtrace
-             at /rustc/library/std/src/sys/backtrace.rs:154
-   6: std::rt::lang_start_internal
-             at /rustc/library/std/src/rt.rs:175
-   7: main";
-
-        let simplified = simplify_backtrace_text(raw);
-
-        assert!(!simplified.contains("std::backtrace"));
-        assert!(!simplified.contains("tracing_batteries::"));
-        assert!(simplified.contains("... skipped 3 frames ..."));
-        assert!(simplified.contains(" 3: my_app::do_work"));
-        assert!(simplified.contains("at ./src/main.rs:20"));
-        assert!(simplified.contains("core::ops::function::FnOnce::call_once"));
-        assert!(!simplified.contains("at /rustc/library/core/src/ops/function.rs:250"));
-        assert!(!simplified.contains("__rust_begin_short_backtrace"));
-        assert!(simplified.contains("... skipped 3 frames ..."));
-    }
-
-    #[test]
-    fn simplify_backtrace_text_falls_back_when_unparsable() {
-        let raw = "not a recognisable backtrace";
-        assert_eq!(simplify_backtrace_text(raw), raw);
     }
 
     #[cfg(feature = "human_errors")]
