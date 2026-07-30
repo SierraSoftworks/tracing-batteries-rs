@@ -103,11 +103,11 @@ impl Battery for SentryBattery {
 /// ```no_run
 /// use tracing_batteries::{Session, Sentry, prelude::*};
 ///
+/// let mut opts = sentry::ClientOptions::default();
+/// opts.environment = Some("production".into());
+///
 /// let session = Session::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
-///   .with_battery(Sentry::new(("https://username:password@ingest.sentry.io/project", sentry::ClientOptions {
-///     environment: Some("production".into()),
-///     ..Default::default()
-///   })));
+///   .with_battery(Sentry::new(("https://username:password@ingest.sentry.io/project", opts)));
 ///
 /// sentry::capture_message("Hello, Sentry!", sentry::Level::Info);
 ///
@@ -140,11 +140,12 @@ impl Sentry {
     /// ```rust
     /// use tracing_batteries::{Session, Sentry, SentryLevel, prelude::*};
     ///
+    /// let mut opts = sentry::ClientOptions::default();
+    /// opts.environment = Some("production".into());
+    ///
     /// let session = Session::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
-    ///   .with_battery(Sentry::new(("https://username:password@ingest.sentry.io/project", sentry::ClientOptions {
-    ///     environment: Some("production".into()),
-    ///     ..Default::default()
-    ///   })).with_default_level(SentryLevel::Warning));
+    ///   .with_battery(Sentry::new(("https://username:password@ingest.sentry.io/project", opts))
+    ///     .with_default_level(SentryLevel::Warning));
     ///
     /// // Will not be sent to Sentry
     /// sentry::capture_message("Hello, Sentry!", SentryLevel::Info);
