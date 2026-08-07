@@ -85,7 +85,7 @@ impl Battery for SentryBattery {
 /// </div>
 ///
 /// The Sentry integration can either be initialized by providing just a DSN,
-/// or by providing a tuple of a DSN and [`sentry::ClientOptions`] struct.
+/// or by providing a configured [`sentry::ClientOptions`] value.
 ///
 /// ## Example (using DSN)
 /// ```no_run
@@ -99,15 +99,17 @@ impl Battery for SentryBattery {
 /// session.shutdown();
 /// ```
 ///
-/// ## Example (using DSN and ClientOptions)
+/// ## Example (using ClientOptions)
 /// ```no_run
 /// use tracing_batteries::{Session, Sentry, prelude::*};
 ///
-/// let mut opts = sentry::ClientOptions::default();
-/// opts.environment = Some("production".into());
-///
 /// let session = Session::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
-///   .with_battery(Sentry::new(("https://username:password@ingest.sentry.io/project", opts)));
+///   .with_battery(Sentry::new(
+///     sentry::ClientOptions::new()
+///       .dsn("https://username:password@ingest.sentry.io/project")
+///       .maybe_release(sentry::release_name!())
+///       .environment("production")
+///   ));
 ///
 /// sentry::capture_message("Hello, Sentry!", sentry::Level::Info);
 ///
@@ -140,11 +142,13 @@ impl Sentry {
     /// ```rust
     /// use tracing_batteries::{Session, Sentry, SentryLevel, prelude::*};
     ///
-    /// let mut opts = sentry::ClientOptions::default();
-    /// opts.environment = Some("production".into());
-    ///
     /// let session = Session::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
-    ///   .with_battery(Sentry::new(("https://username:password@ingest.sentry.io/project", opts))
+    ///   .with_battery(Sentry::new(
+    ///     sentry::ClientOptions::new()
+    ///       .dsn("https://username:password@ingest.sentry.io/project")
+    ///       .maybe_release(sentry::release_name!())
+    ///       .environment("production")
+    ///   )
     ///     .with_default_level(SentryLevel::Warning));
     ///
     /// // Will not be sent to Sentry
