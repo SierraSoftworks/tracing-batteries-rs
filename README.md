@@ -137,6 +137,44 @@ session metadata, consistent with the other `OTEL_*` environment variables (such
 `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_PROTOCOL`, and
 `OTEL_TRACES_SAMPLER`) that this integration understands.
 
+#### Metrics and logs
+Traces are always exported. Metrics and logs are opt-in, and share the endpoint, protocol,
+headers, and resource configured for traces:
+
+```rust
+use tracing_batteries::{Session, OpenTelemetry};
+use tracing_batteries::prelude::*;
+
+fn main() {
+    let session = Session::new("my-service", env!("CARGO_PKG_VERSION"))
+        .with_battery(OpenTelemetry::new("https://api.honeycomb.io")
+          .with_metrics()
+          .with_logs());
+
+    // Instruments must be created after the session, through the global meter.
+    let requests = opentelemetry::global::meter("my-service")
+        .u64_counter("requests_total")
+        .build();
+
+    info_span!("request").in_scope(|| {
+        requests.add(1, &[opentelemetry::KeyValue::new("status", "ok")]);
+        // Exported as an OTLP log record carrying the enclosing span's trace and span IDs.
+        warn!(attempt = 2, "Retrying the request");
+    });
+
+    session.shutdown();
+}
+```
+
+- `with_metrics()` installs a global `MeterProvider` exporting cumulative metrics on the
+  `OTEL_METRIC_EXPORT_INTERVAL` cadence (default 60s). Measurements are recorded against the
+  active span context, so exemplars will attach automatically once the Rust SDK emits them.
+- `with_logs()` exports `tracing` events as OTLP log records (subject to `LOG_LEVEL` / the
+  default level), each carrying the trace and span IDs of the span it was emitted within.
+  Event fields become log attributes, and an error-typed field becomes `exception.message`.
+- Both signals honour the session's `enabled` flag, so they are suppressed in debug builds
+  unless `.with_debug_builds()` is used.
+
 ### Sentry
 The `Sentry` integration allows you to send session and error information to
 Sentry from within your application.
