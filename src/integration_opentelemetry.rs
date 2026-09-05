@@ -9,7 +9,12 @@ use opentelemetry::trace::TracerProvider;
 use opentelemetry_otlp::{WithExportConfig, WithHttpConfig, WithTonicConfig};
 use opentelemetry_sdk::{
     Resource,
+    error::OTelSdkResult,
     logs::SdkLoggerProvider,
+    metrics::{
+        PeriodicReader, SdkMeterProvider, Temporality, data::ResourceMetrics,
+        exporter::PushMetricExporter,
+    },
     trace::{Sampler, SdkTracerProvider},
 };
 use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
@@ -18,8 +23,6 @@ use crate::{Battery, BatteryBuilder};
 pub use opentelemetry_otlp::Protocol as OpenTelemetryProtocol;
 pub use opentelemetry_sdk::trace::Sampler as OpenTelemetrySampler;
 pub use tracing::Level as OpenTelemetryLevel;
-
-const KEY_NOT_PARSED_PLACEHOLDER: &'static str = "x-key-not-parsed-correctly";
 
 /// An [OpenTelemetry](opentelemetry) integration which leverages the [`tracing`] ecosystem
 /// to emit span information to an OpenTelemetry collector.
@@ -51,6 +54,17 @@ const KEY_NOT_PARSED_PLACEHOLDER: &'static str = "x-key-not-parsed-correctly";
 /// the session metadata, matching the behaviour of the other `OTEL_*` environment variables
 /// supported by this integration.
 ///
+/// ## Signals
+///
+/// Traces are always exported. Metrics and logs are opt-in and share the collector endpoint,
+/// protocol, headers, and resource with the traces:
+///
+/// - [`with_metrics`](OpenTelemetry::with_metrics) installs a global
+///   [`MeterProvider`](opentelemetry::metrics::MeterProvider), so instruments created through
+///   [`opentelemetry::global::meter`] are exported over OTLP.
+/// - [`with_logs`](OpenTelemetry::with_logs) exports [`tracing`] events as OTLP log records,
+///   carrying the trace and span IDs of the span they were emitted within.
+///
 /// ## Example (gRPC)
 /// ```no_run
 /// use tracing_batteries::{Session, OpenTelemetry, OpenTelemetryProtocol};
@@ -81,6 +95,7 @@ pub struct OpenTelemetry {
     protocol: Option<OpenTelemetryProtocol>,
     sampler: OpenTelemetrySampler,
     use_log_events: bool,
+    use_metrics: bool,
     default_level: Option<OpenTelemetryLevel>,
     force_stdout: Option<bool>,
 }
@@ -122,6 +137,7 @@ impl OpenTelemetry {
             sampler: Self::build_sampler(),
             default_level: None,
             use_log_events: false,
+            use_metrics: false,
             force_stdout: None,
         }
     }
@@ -242,11 +258,32 @@ impl OpenTelemetry {
         }
     }
 
-    /// Configures the OpenTelemetry integration to record log entries as events instead of logs.
+    /// Configures the OpenTelemetry integration to export [`tracing`] events as OpenTelemetry
+    /// log records.
     ///
-    /// By default, the OpenTelemetry integration will not record log events as OpenTelemetry log entries.
-    /// This method can be used to enable recording log events as OpenTelemetry span events instead,
-    /// which can be useful if your tooling doesn't enable easy association of logs and spans.
+    /// By default, [`tracing`] events are only attached to their enclosing span as span events.
+    /// Enabling logs additionally exports each event (subject to the configured level) as an OTLP
+    /// log record through the collector's `/v1/logs` endpoint. Records emitted within a span carry
+    /// that span's trace and span IDs, so a log line can be joined back to the trace it belongs to
+    /// without scanning span events, which makes failure data cheap to aggregate over long windows.
+    ///
+    /// Event fields become log attributes: `field = %value` records the value's `Display` form,
+    /// `field = ?value` its `Debug` form, and a field holding a `&dyn std::error::Error` is recorded
+    /// as an `exception.message` attribute.
+    ///
+    /// ## Example
+    /// ```rust
+    /// use tracing_batteries::OpenTelemetry;
+    ///
+    /// OpenTelemetry::new("localhost:4317")
+    ///  .with_logs();
+    /// ```
+    pub fn with_logs(mut self) -> Self {
+        self.use_log_events = true;
+        self
+    }
+
+    /// An alias for [`OpenTelemetry::with_logs`], retained for backwards compatibility.
     ///
     /// ## Example
     /// ```rust
@@ -255,127 +292,189 @@ impl OpenTelemetry {
     /// OpenTelemetry::new("localhost:4317")
     ///  .with_log_events();
     /// ```
-    pub fn with_log_events(mut self) -> Self {
-        self.use_log_events = true;
+    pub fn with_log_events(self) -> Self {
+        self.with_logs()
+    }
+
+    /// Configures the OpenTelemetry integration to export metrics.
+    ///
+    /// When enabled, a global [`MeterProvider`](opentelemetry::metrics::MeterProvider) is installed
+    /// which periodically exports every instrument created through
+    /// [`opentelemetry::global::meter`] to the collector's `/v1/metrics` endpoint, using the same
+    /// protocol, headers, and resource as the traces. The export cadence can be tuned with the
+    /// standard `OTEL_METRIC_EXPORT_INTERVAL` and `OTEL_METRIC_EXPORT_TIMEOUT` environment
+    /// variables (in milliseconds; the interval defaults to 60s).
+    ///
+    /// Metrics are exported with cumulative temporality (the Prometheus-compatible default).
+    /// Exports are suppressed while the session's `enabled` flag is `false` (for example in
+    /// debug builds), matching the behaviour of the trace and log signals.
+    ///
+    /// <div class="warning">
+    ///
+    /// Instruments are bound to the provider which was global at the time they were created, so
+    /// create them (or the [`Meter`](opentelemetry::metrics::Meter) they come from) only after the
+    /// session has been constructed.
+    ///
+    /// </div>
+    ///
+    /// ## Exemplars
+    ///
+    /// Measurements are recorded against the active OpenTelemetry context, which the tracing
+    /// layer activates whenever a [`tracing`] span is entered. The Rust SDK does not yet populate
+    /// exemplars on exported data points; once it does, measurements taken within a span will
+    /// automatically carry that span's trace and span IDs as exemplars with no further changes.
+    ///
+    /// ## Example
+    /// ```rust
+    /// use tracing_batteries::OpenTelemetry;
+    /// use tracing_batteries::prelude::opentelemetry;
+    ///
+    /// let battery = OpenTelemetry::new("localhost:4317")
+    ///   .with_metrics();
+    ///
+    /// // Once the session has been constructed, instruments can be created through the global meter:
+    /// let requests = opentelemetry::global::meter("my-service")
+    ///   .u64_counter("requests_total")
+    ///   .build();
+    /// requests.add(1, &[opentelemetry::KeyValue::new("status", "ok")]);
+    /// ```
+    pub fn with_metrics(mut self) -> Self {
+        self.use_metrics = true;
         self
     }
 
     fn build_opentelemetry_providers(
         &self,
         metadata: &crate::Metadata,
-    ) -> Option<(SdkTracerProvider, SdkLoggerProvider)> {
+        enabled: Arc<AtomicBool>,
+    ) -> Option<OpenTelemetryProviders> {
         if self.endpoint.is_empty() {
             return None;
         }
 
-        let tracer_builder = opentelemetry_sdk::trace::TracerProviderBuilder::default()
-            .with_resource(self.build_resource(metadata))
-            .with_sampler(self.sampler.clone());
+        let protocol = self.get_protocol();
+        let resource = self.build_resource(metadata);
 
-        let tracer_builder = match self.get_protocol() {
-            OpenTelemetryProtocol::Grpc => tracer_builder.with_batch_exporter(
+        let span_exporter = match protocol {
+            OpenTelemetryProtocol::Grpc => opentelemetry_otlp::SpanExporter::builder()
+                .with_tonic()
+                .with_tls_config(self.tonic_tls_config())
+                .with_endpoint(self.endpoint.clone())
+                .with_metadata(self.tonic_metadata())
+                .build()
+                .ok()?,
+            proto @ (OpenTelemetryProtocol::HttpBinary | OpenTelemetryProtocol::HttpJson) => {
                 opentelemetry_otlp::SpanExporter::builder()
-                    .with_tonic()
-                    .with_tls_config(
-                        tonic::transport::ClientTlsConfig::new()
-                            .with_native_roots()
-                            .with_webpki_roots(),
-                    )
-                    .with_endpoint(self.endpoint.clone())
-                    .with_metadata({
-                        let mut tracing_metadata = tonic::metadata::MetadataMap::new();
-                        for (key, value) in self.headers.iter() {
-                            if let (key, Ok(value)) = (
-                                key.parse().unwrap_or_else(|_| {
-                                    tonic::metadata::MetadataKey::from_static(
-                                        KEY_NOT_PARSED_PLACEHOLDER,
-                                    )
-                                }),
-                                value.to_string().parse(),
-                            ) {
-                                if key.as_str() != KEY_NOT_PARSED_PLACEHOLDER {
-                                    tracing_metadata.insert(key, value);
-                                }
-                            }
-                        }
-                        tracing_metadata
-                    })
+                    .with_http()
+                    .with_protocol(proto)
+                    .with_endpoint(format!("{}/v1/traces", self.endpoint))
+                    .with_headers(self.http_headers())
                     .build()
-                    .ok()?,
-            ),
-            proto @ (OpenTelemetryProtocol::HttpBinary | OpenTelemetryProtocol::HttpJson) => {
-                tracer_builder.with_batch_exporter(
-                    opentelemetry_otlp::SpanExporter::builder()
-                        .with_http()
-                        .with_protocol(proto)
-                        .with_endpoint(format!("{}/v1/traces", self.endpoint))
-                        .with_headers({
-                            let mut tracing_headers = HashMap::new();
-                            for (key, value) in self.headers.iter() {
-                                tracing_headers.insert(key.to_string(), value.to_string());
-                            }
-                            tracing_headers
-                        })
-                        .build()
-                        .ok()?,
-                )
+                    .ok()?
             }
         };
 
-        let logger_builder = opentelemetry_sdk::logs::LoggerProviderBuilder::default()
-            .with_resource(self.build_resource(metadata));
+        let tracer_provider = opentelemetry_sdk::trace::TracerProviderBuilder::default()
+            .with_resource(resource.clone())
+            .with_sampler(self.sampler.clone())
+            .with_batch_exporter(span_exporter)
+            .build();
 
-        let logger_builder = match self.get_protocol() {
-            OpenTelemetryProtocol::Grpc => logger_builder.with_batch_exporter(
+        let log_exporter = match protocol {
+            OpenTelemetryProtocol::Grpc => opentelemetry_otlp::LogExporter::builder()
+                .with_tonic()
+                .with_tls_config(self.tonic_tls_config())
+                .with_endpoint(self.endpoint.clone())
+                .with_metadata(self.tonic_metadata())
+                .build()
+                .ok()?,
+            proto @ (OpenTelemetryProtocol::HttpBinary | OpenTelemetryProtocol::HttpJson) => {
                 opentelemetry_otlp::LogExporter::builder()
-                    .with_tonic()
-                    .with_tls_config(
-                        tonic::transport::ClientTlsConfig::new()
-                            .with_native_roots()
-                            .with_webpki_roots(),
-                    )
-                    .with_endpoint(self.endpoint.clone())
-                    .with_metadata({
-                        let mut tracing_metadata = tonic::metadata::MetadataMap::new();
-                        for (key, value) in self.headers.iter() {
-                            if let (key, Ok(value)) = (
-                                key.parse().unwrap_or_else(|_| {
-                                    tonic::metadata::MetadataKey::from_static(
-                                        KEY_NOT_PARSED_PLACEHOLDER,
-                                    )
-                                }),
-                                value.to_string().parse(),
-                            ) {
-                                if key.as_str() != KEY_NOT_PARSED_PLACEHOLDER {
-                                    tracing_metadata.insert(key, value);
-                                }
-                            }
-                        }
-                        tracing_metadata
-                    })
+                    .with_http()
+                    .with_protocol(proto)
+                    .with_endpoint(format!("{}/v1/logs", self.endpoint))
+                    .with_headers(self.http_headers())
                     .build()
-                    .ok()?,
-            ),
-            proto @ (OpenTelemetryProtocol::HttpBinary | OpenTelemetryProtocol::HttpJson) => {
-                logger_builder.with_batch_exporter(
-                    opentelemetry_otlp::LogExporter::builder()
-                        .with_http()
-                        .with_protocol(proto)
-                        .with_endpoint(format!("{}/v1/logs", self.endpoint))
-                        .with_headers({
-                            let mut tracing_headers = HashMap::new();
-                            for (key, value) in self.headers.iter() {
-                                tracing_headers.insert(key.to_string(), value.to_string());
-                            }
-                            tracing_headers
-                        })
-                        .build()
-                        .ok()?,
-                )
+                    .ok()?
             }
         };
 
-        Some((tracer_builder.build(), logger_builder.build()))
+        let logger_provider = opentelemetry_sdk::logs::LoggerProviderBuilder::default()
+            .with_resource(resource.clone())
+            .with_batch_exporter(log_exporter)
+            .build();
+
+        let meter_provider = if self.use_metrics {
+            let metric_exporter = match protocol {
+                OpenTelemetryProtocol::Grpc => opentelemetry_otlp::MetricExporter::builder()
+                    .with_tonic()
+                    .with_tls_config(self.tonic_tls_config())
+                    .with_endpoint(self.endpoint.clone())
+                    .with_metadata(self.tonic_metadata())
+                    .with_temporality(Temporality::Cumulative)
+                    .build()
+                    .ok()?,
+                proto @ (OpenTelemetryProtocol::HttpBinary | OpenTelemetryProtocol::HttpJson) => {
+                    opentelemetry_otlp::MetricExporter::builder()
+                        .with_http()
+                        .with_protocol(proto)
+                        .with_endpoint(format!("{}/v1/metrics", self.endpoint))
+                        .with_headers(self.http_headers())
+                        .with_temporality(Temporality::Cumulative)
+                        .build()
+                        .ok()?
+                }
+            };
+
+            Some(
+                SdkMeterProvider::builder()
+                    .with_resource(resource)
+                    .with_reader(
+                        PeriodicReader::builder(GatedMetricExporter {
+                            inner: metric_exporter,
+                            enabled,
+                        })
+                        .build(),
+                    )
+                    .build(),
+            )
+        } else {
+            None
+        };
+
+        Some(OpenTelemetryProviders {
+            tracer_provider,
+            logger_provider,
+            meter_provider,
+        })
+    }
+
+    fn tonic_tls_config(&self) -> tonic::transport::ClientTlsConfig {
+        tonic::transport::ClientTlsConfig::new()
+            .with_native_roots()
+            .with_webpki_roots()
+    }
+
+    /// The configured headers as gRPC request metadata, skipping any header whose key or value
+    /// cannot be represented as gRPC metadata.
+    fn tonic_metadata(&self) -> tonic::metadata::MetadataMap {
+        let mut tracing_metadata = tonic::metadata::MetadataMap::new();
+        for (key, value) in self.headers.iter() {
+            if let (Ok(key), Ok(value)) = (
+                key.parse::<tonic::metadata::MetadataKey<tonic::metadata::Ascii>>(),
+                value.to_string().parse(),
+            ) {
+                tracing_metadata.insert(key, value);
+            }
+        }
+        tracing_metadata
+    }
+
+    fn http_headers(&self) -> HashMap<String, String> {
+        self.headers
+            .iter()
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect()
     }
 
     fn get_protocol(&self) -> OpenTelemetryProtocol {
@@ -510,44 +609,44 @@ impl BatteryBuilder for OpenTelemetry {
                 OpenTelemetryLevel::DEBUG => tracing_subscriber::filter::LevelFilter::DEBUG,
                 OpenTelemetryLevel::TRACE => tracing_subscriber::filter::LevelFilter::TRACE,
             })
-            .with(tracing_subscriber::filter::dynamic_filter_fn(
-                move |_meta, _ctx| enabled.load(std::sync::atomic::Ordering::Relaxed),
-            ));
+            .with(tracing_subscriber::filter::dynamic_filter_fn({
+                let enabled = enabled.clone();
+                move |_meta, _ctx| enabled.load(std::sync::atomic::Ordering::Relaxed)
+            }));
 
-        if let Some((tracer_provider, logs_provider)) = self.build_opentelemetry_providers(metadata)
-        {
-            opentelemetry::global::set_tracer_provider(tracer_provider.clone());
+        if let Some(providers) = self.build_opentelemetry_providers(metadata, enabled) {
+            opentelemetry::global::set_tracer_provider(providers.tracer_provider.clone());
 
-            let tracer_layer = Box::new(tracing_opentelemetry::OpenTelemetryLayer::new(
-                tracer_provider.tracer(metadata.service.clone()),
-            ));
+            if let Some(meter_provider) = providers.meter_provider.as_ref() {
+                opentelemetry::global::set_meter_provider(meter_provider.clone());
+            }
 
-            let logging_layer = Box::new(
-                opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(
-                    &logs_provider,
-                ),
+            let tracer_layer = tracing_opentelemetry::OpenTelemetryLayer::new(
+                providers.tracer_provider.tracer(metadata.service.clone()),
             );
 
             let registry = registry.with(tracer_layer);
 
-            match (self.use_log_events, self.force_stdout) {
-                (true, Some(true)) => {
-                    registry.with(self.build_stdout_layer()).init();
-                }
-                (true, _) => {
-                    registry.with(logging_layer).init();
-                }
-                (false, Some(true)) => {
-                    registry.with(self.build_stdout_layer()).init();
-                }
-                _ => {
-                    registry.init();
-                }
-            }
+            // The log bridge and the stdout writer are independent sinks: either, both, or neither
+            // may be installed. Each is boxed so the registry has a single concrete type regardless
+            // of the combination selected.
+            let logging_layer = self.use_log_events.then(|| {
+                Box::new(
+                    opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(
+                        &providers.logger_provider,
+                    ),
+                ) as Box<dyn Layer<_> + Send + Sync>
+            });
+
+            let stdout_layer = matches!(self.force_stdout, Some(true))
+                .then(|| Box::new(self.build_stdout_layer()) as Box<dyn Layer<_> + Send + Sync>);
+
+            registry.with(logging_layer).with(stdout_layer).init();
 
             Box::new(OpenTelemetryBattery {
-                tracer_provider: Some(tracer_provider),
-                logger_provider: Some(logs_provider),
+                tracer_provider: Some(providers.tracer_provider),
+                logger_provider: Some(providers.logger_provider),
+                meter_provider: providers.meter_provider,
             })
         } else if !matches!(self.force_stdout, Some(false)) {
             registry.with(self.build_stdout_layer()).init();
@@ -559,10 +658,53 @@ impl BatteryBuilder for OpenTelemetry {
     }
 }
 
+/// The SDK providers backing each exported signal.
+struct OpenTelemetryProviders {
+    tracer_provider: SdkTracerProvider,
+    logger_provider: SdkLoggerProvider,
+    meter_provider: Option<SdkMeterProvider>,
+}
+
+/// A metric exporter which honours the session's `enabled` flag by dropping export batches
+/// while telemetry is disabled, mirroring the dynamic filter applied to the tracing layers.
+struct GatedMetricExporter {
+    inner: opentelemetry_otlp::MetricExporter,
+    enabled: Arc<AtomicBool>,
+}
+
+impl PushMetricExporter for GatedMetricExporter {
+    fn export(
+        &self,
+        metrics: &ResourceMetrics,
+    ) -> impl std::future::Future<Output = OTelSdkResult> + Send {
+        let enabled = self.enabled.load(std::sync::atomic::Ordering::Relaxed);
+        async move {
+            if enabled {
+                self.inner.export(metrics).await
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    fn force_flush(&self) -> OTelSdkResult {
+        self.inner.force_flush()
+    }
+
+    fn shutdown_with_timeout(&self, timeout: Duration) -> OTelSdkResult {
+        self.inner.shutdown_with_timeout(timeout)
+    }
+
+    fn temporality(&self) -> Temporality {
+        self.inner.temporality()
+    }
+}
+
 #[derive(Default)]
 struct OpenTelemetryBattery {
     tracer_provider: Option<SdkTracerProvider>,
     logger_provider: Option<SdkLoggerProvider>,
+    meter_provider: Option<SdkMeterProvider>,
 }
 
 impl Battery for OpenTelemetryBattery {
@@ -579,6 +721,9 @@ impl Battery for OpenTelemetryBattery {
             let _ = provider.shutdown_with_timeout(Duration::from_secs(2));
         }
         if let Some(provider) = self.logger_provider.take() {
+            let _ = provider.shutdown_with_timeout(Duration::from_secs(2));
+        }
+        if let Some(provider) = self.meter_provider.take() {
             let _ = provider.shutdown_with_timeout(Duration::from_secs(2));
         }
     }
