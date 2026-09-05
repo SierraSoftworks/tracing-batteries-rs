@@ -677,9 +677,10 @@ impl PushMetricExporter for GatedMetricExporter {
         &self,
         metrics: &ResourceMetrics,
     ) -> impl std::future::Future<Output = OTelSdkResult> + Send {
-        let enabled = self.enabled.load(std::sync::atomic::Ordering::Relaxed);
         async move {
-            if enabled {
+            // Read the flag when the export actually runs (rather than when the future is
+            // created) so a batch never slips through after telemetry has been disabled.
+            if self.enabled.load(std::sync::atomic::Ordering::Relaxed) {
                 self.inner.export(metrics).await
             } else {
                 Ok(())
