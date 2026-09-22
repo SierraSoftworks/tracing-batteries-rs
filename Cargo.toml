@@ -8,8 +8,8 @@ chrono = { version = "0.4.45", optional = true }
 hex = { version = "0.4.3", optional = true }
 human-errors = { version = "0.2.4", optional = true, features = ["backtraces"] }
 iana-time-zone = { version = "0.1.65", optional = true }
-opentelemetry = { version = "0.32.0", optional = true }
-opentelemetry_sdk = { version = "0.32.1", features = [
+opentelemetry = { version = "0.33.0", optional = true }
+opentelemetry_sdk = { version = "0.33.0", features = [
   "rt-tokio",
 ], optional = true }
 opentelemetry-otlp = { version = "0.32.0", features = [
@@ -43,7 +43,7 @@ tracing-attributes = { git = "https://github.com/SierraSoftworks/tracing.git" }
 tracing-futures = { version = "0.2.5", features = ["futures-03"] }
 tracing-opentelemetry = { version = "0.33", optional = true }
 tracing-subscriber = { version = "0.3.23" }
-opentelemetry-appender-tracing = { version = "0.32.0", optional = true }
+opentelemetry-appender-tracing = { version = "0.33.0", optional = true }
 
 [dev-dependencies]
 serde_json = "1"
