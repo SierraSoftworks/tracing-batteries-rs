@@ -363,15 +363,13 @@ impl OpenTelemetry {
                 .with_metadata(self.tonic_metadata())
                 .build()
                 .ok()?,
-            proto @ (OpenTelemetryProtocol::HttpBinary | OpenTelemetryProtocol::HttpJson) => {
-                opentelemetry_otlp::SpanExporter::builder()
-                    .with_http()
-                    .with_protocol(proto)
-                    .with_endpoint(format!("{}/v1/traces", self.endpoint))
-                    .with_headers(self.http_headers())
-                    .build()
-                    .ok()?
-            }
+            proto => opentelemetry_otlp::SpanExporter::builder()
+                .with_http()
+                .with_protocol(proto)
+                .with_endpoint(format!("{}/v1/traces", self.endpoint))
+                .with_headers(self.http_headers())
+                .build()
+                .ok()?,
         };
 
         let tracer_provider = opentelemetry_sdk::trace::TracerProviderBuilder::default()
@@ -388,15 +386,13 @@ impl OpenTelemetry {
                 .with_metadata(self.tonic_metadata())
                 .build()
                 .ok()?,
-            proto @ (OpenTelemetryProtocol::HttpBinary | OpenTelemetryProtocol::HttpJson) => {
-                opentelemetry_otlp::LogExporter::builder()
-                    .with_http()
-                    .with_protocol(proto)
-                    .with_endpoint(format!("{}/v1/logs", self.endpoint))
-                    .with_headers(self.http_headers())
-                    .build()
-                    .ok()?
-            }
+            proto => opentelemetry_otlp::LogExporter::builder()
+                .with_http()
+                .with_protocol(proto)
+                .with_endpoint(format!("{}/v1/logs", self.endpoint))
+                .with_headers(self.http_headers())
+                .build()
+                .ok()?,
         };
 
         let logger_provider = opentelemetry_sdk::logs::LoggerProviderBuilder::default()
@@ -414,16 +410,14 @@ impl OpenTelemetry {
                     .with_temporality(Temporality::Cumulative)
                     .build()
                     .ok()?,
-                proto @ (OpenTelemetryProtocol::HttpBinary | OpenTelemetryProtocol::HttpJson) => {
-                    opentelemetry_otlp::MetricExporter::builder()
-                        .with_http()
-                        .with_protocol(proto)
-                        .with_endpoint(format!("{}/v1/metrics", self.endpoint))
-                        .with_headers(self.http_headers())
-                        .with_temporality(Temporality::Cumulative)
-                        .build()
-                        .ok()?
-                }
+                proto => opentelemetry_otlp::MetricExporter::builder()
+                    .with_http()
+                    .with_protocol(proto)
+                    .with_endpoint(format!("{}/v1/metrics", self.endpoint))
+                    .with_headers(self.http_headers())
+                    .with_temporality(Temporality::Cumulative)
+                    .build()
+                    .ok()?,
             };
 
             Some(

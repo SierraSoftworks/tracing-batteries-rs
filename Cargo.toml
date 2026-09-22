@@ -8,15 +8,15 @@ chrono = { version = "0.4.45", optional = true }
 hex = { version = "0.4.3", optional = true }
 human-errors = { version = "0.2.4", optional = true, features = ["backtraces"] }
 iana-time-zone = { version = "0.1.65", optional = true }
-opentelemetry = { version = "0.32.0", optional = true }
-opentelemetry_sdk = { version = "0.32.1", features = [
+opentelemetry = { version = "0.33.0", optional = true }
+opentelemetry_sdk = { version = "0.33.0", features = [
   "rt-tokio",
 ], optional = true }
-opentelemetry-otlp = { version = "0.32.0", features = [
+opentelemetry-otlp = { version = "0.33.0", features = [
   "http-json",
   "http-proto",
   "grpc-tonic",
-  "tls",
+  "tls-ring",
   "tls-roots",
 ], optional = true }
 radix_fmt = { version = "1.0.0", optional = true }
@@ -41,9 +41,11 @@ tonic = { version = "0.14.6", features = ["tls-webpki-roots", "tls-native-roots"
 tracing = { version = "0.1.44", features = ["log"] }
 tracing-attributes = { git = "https://github.com/SierraSoftworks/tracing.git" }
 tracing-futures = { version = "0.2.5", features = ["futures-03"] }
-tracing-opentelemetry = { version = "0.33", optional = true }
+# opentelemetry 0.33 support is merged upstream but not yet published (the crates.io 0.33.0 release
+# targets opentelemetry 0.32). Switch back to a crates.io version once one is released.
+tracing-opentelemetry = { git = "https://github.com/tokio-rs/tracing-opentelemetry.git", rev = "b475aa173d926b5f8bc4eecf255691a453850b4c", optional = true }
 tracing-subscriber = { version = "0.3.23" }
-opentelemetry-appender-tracing = { version = "0.32.0", optional = true }
+opentelemetry-appender-tracing = { version = "0.33.0", optional = true }
 
 [dev-dependencies]
 serde_json = "1"
