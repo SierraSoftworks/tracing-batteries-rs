@@ -232,10 +232,14 @@ impl OpenTelemetry {
         self
     }
 
-    /// Configures the OpenTelemetry integration to use the provided log level.
+    /// Configures the level of the log output written to stdout.
     ///
-    /// This method is used to configure the log level used by the OpenTelemetry integration,
-    /// the log level is used to determine which spans should be recorded and exported.
+    /// The `LOG_LEVEL` environment variable (`error`, `warn`, `info`, `debug` or `trace`) takes
+    /// precedence over this value, and `INFO` is used if neither is set. The level only filters
+    /// the stdout output: spans and log events exported over OTLP are always recorded at `INFO`
+    /// or above, so quietening stdout with `LOG_LEVEL=warn` does not stop INFO spans reaching
+    /// your collector. A level more verbose than `INFO` (`debug` or `trace`) applies to the OTLP
+    /// export as well, so that debug spans can still be exported when you need them.
     ///
     /// ## Example
     /// ```rust
@@ -296,10 +300,11 @@ impl OpenTelemetry {
     /// log records.
     ///
     /// By default, [`tracing`] events are only attached to their enclosing span as span events.
-    /// Enabling logs additionally exports each event (subject to the configured level) as an OTLP
-    /// log record through the collector's `/v1/logs` endpoint. Records emitted within a span carry
-    /// that span's trace and span IDs, so a log line can be joined back to the trace it belongs to
-    /// without scanning span events, which makes failure data cheap to aggregate over long windows.
+    /// Enabling logs additionally exports each event (at `INFO` and above, or more verbose if
+    /// `LOG_LEVEL` asks for it) as an OTLP log record through the collector's `/v1/logs` endpoint.
+    /// Records emitted within a span carry that span's trace and span IDs, so a log line can be
+    /// joined back to the trace it belongs to without scanning span events, which makes failure
+    /// data cheap to aggregate over long windows.
     ///
     /// Event fields become log attributes: `field = %value` records the value's `Display` form,
     /// `field = ?value` its `Debug` form, and a field holding a `&dyn std::error::Error` is recorded
@@ -600,6 +605,22 @@ impl OpenTelemetry {
             .unwrap_or(Sampler::AlwaysOn)
     }
 
+    /// The per-layer filter for the stdout output, which follows the configured level exactly.
+    fn stdout_level_for(level: OpenTelemetryLevel) -> tracing_subscriber::filter::LevelFilter {
+        tracing_subscriber::filter::LevelFilter::from_level(level)
+    }
+
+    /// The per-layer filter for the OTLP trace and log export.
+    ///
+    /// `LOG_LEVEL` is about how noisy the process's own output is, so it may make the export more
+    /// verbose (`debug`, `trace`) but never less so than `INFO`; quietening stdout to `warn`
+    /// must not silently drop the INFO spans a collector depends on.
+    fn export_level_for(level: OpenTelemetryLevel) -> tracing_subscriber::filter::LevelFilter {
+        use tracing_subscriber::filter::LevelFilter;
+
+        LevelFilter::INFO.max(LevelFilter::from_level(level))
+    }
+
     fn build_level(&self) -> OpenTelemetryLevel {
         match std::env::var("LOG_LEVEL")
             .map(|s| s.to_lowercase())
@@ -656,15 +677,12 @@ impl BatteryBuilder for OpenTelemetry {
             opentelemetry_sdk::propagation::TraceContextPropagator::new(),
         );
 
-        let registry = tracing_subscriber::registry()
-            .with(match self.build_level() {
-                OpenTelemetryLevel::ERROR => tracing_subscriber::filter::LevelFilter::ERROR,
-                OpenTelemetryLevel::WARN => tracing_subscriber::filter::LevelFilter::WARN,
-                OpenTelemetryLevel::INFO => tracing_subscriber::filter::LevelFilter::INFO,
-                OpenTelemetryLevel::DEBUG => tracing_subscriber::filter::LevelFilter::DEBUG,
-                OpenTelemetryLevel::TRACE => tracing_subscriber::filter::LevelFilter::TRACE,
-            })
-            .with(tracing_subscriber::filter::dynamic_filter_fn({
+        // The session's enabled flag is a global filter, so disabling the session silences every
+        // layer. The levels are per-layer filters instead: `LOG_LEVEL` only governs stdout, and
+        // the OTLP layers keep their own INFO floor (see `export_level_for`).
+        let level = self.build_level();
+        let registry =
+            tracing_subscriber::registry().with(tracing_subscriber::filter::dynamic_filter_fn({
                 let enabled = enabled.clone();
                 move |_meta, _ctx| enabled.load(std::sync::atomic::Ordering::Relaxed)
             }));
@@ -678,7 +696,8 @@ impl BatteryBuilder for OpenTelemetry {
 
             let tracer_layer = tracing_opentelemetry::OpenTelemetryLayer::new(
                 providers.tracer_provider.tracer(metadata.service.clone()),
-            );
+            )
+            .with_filter(Self::export_level_for(level));
 
             let registry = registry.with(tracer_layer);
 
@@ -689,12 +708,17 @@ impl BatteryBuilder for OpenTelemetry {
                 Box::new(
                     opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(
                         &providers.logger_provider,
-                    ),
+                    )
+                    .with_filter(Self::export_level_for(level)),
                 ) as Box<dyn Layer<_> + Send + Sync>
             });
 
-            let stdout_layer = matches!(self.force_stdout, Some(true))
-                .then(|| Box::new(self.build_stdout_layer()) as Box<dyn Layer<_> + Send + Sync>);
+            let stdout_layer = matches!(self.force_stdout, Some(true)).then(|| {
+                Box::new(
+                    self.build_stdout_layer()
+                        .with_filter(Self::stdout_level_for(level)),
+                ) as Box<dyn Layer<_> + Send + Sync>
+            });
 
             registry.with(logging_layer).with(stdout_layer).init();
 
@@ -704,7 +728,12 @@ impl BatteryBuilder for OpenTelemetry {
                 meter_provider: providers.meter_provider,
             })
         } else if !matches!(self.force_stdout, Some(false)) {
-            registry.with(self.build_stdout_layer()).init();
+            registry
+                .with(
+                    self.build_stdout_layer()
+                        .with_filter(Self::stdout_level_for(level)),
+                )
+                .init();
 
             Box::new(OpenTelemetryBattery::default())
         } else {
@@ -796,6 +825,112 @@ mod test {
         );
 
         session.shutdown();
+    }
+
+    #[test]
+    fn log_level_only_raises_the_export_level() {
+        use tracing_subscriber::filter::LevelFilter;
+
+        // stdout follows the configured level exactly...
+        assert_eq!(
+            OpenTelemetry::stdout_level_for(OpenTelemetryLevel::WARN),
+            LevelFilter::WARN
+        );
+        assert_eq!(
+            OpenTelemetry::stdout_level_for(OpenTelemetryLevel::DEBUG),
+            LevelFilter::DEBUG
+        );
+
+        // ...while the OTLP export never drops below INFO, but still follows a more verbose level.
+        for (level, expected) in [
+            (OpenTelemetryLevel::ERROR, LevelFilter::INFO),
+            (OpenTelemetryLevel::WARN, LevelFilter::INFO),
+            (OpenTelemetryLevel::INFO, LevelFilter::INFO),
+            (OpenTelemetryLevel::DEBUG, LevelFilter::DEBUG),
+            (OpenTelemetryLevel::TRACE, LevelFilter::TRACE),
+        ] {
+            assert_eq!(OpenTelemetry::export_level_for(level), expected, "{level}");
+        }
+    }
+
+    #[test]
+    fn warn_stdout_level_still_exports_info_spans() {
+        use std::sync::{
+            Arc, Mutex,
+            atomic::{AtomicBool, Ordering},
+        };
+        use tracing_subscriber::{Layer, layer::SubscriberExt};
+
+        /// Records the level of every span and event that reaches it.
+        #[derive(Clone, Default)]
+        struct Capture(Arc<Mutex<Vec<(&'static str, tracing::Level)>>>);
+
+        impl<S: tracing::Subscriber> Layer<S> for Capture {
+            fn on_new_span(
+                &self,
+                attrs: &tracing::span::Attributes<'_>,
+                _id: &tracing::span::Id,
+                _ctx: tracing_subscriber::layer::Context<'_, S>,
+            ) {
+                let level = *attrs.metadata().level();
+                self.0.lock().unwrap().push(("span", level));
+            }
+
+            fn on_event(
+                &self,
+                event: &tracing::Event<'_>,
+                _ctx: tracing_subscriber::layer::Context<'_, S>,
+            ) {
+                let level = *event.metadata().level();
+                self.0.lock().unwrap().push(("event", level));
+            }
+        }
+
+        // Wired up the same way as `OpenTelemetry::setup`: a global enabled flag, with the stdout
+        // and export layers each carrying their own level filter.
+        let level = OpenTelemetryLevel::WARN;
+        let enabled = Arc::new(AtomicBool::new(true));
+        let stdout = Capture::default();
+        let export = Capture::default();
+
+        let flag = enabled.clone();
+        let subscriber = tracing_subscriber::registry()
+            .with(tracing_subscriber::filter::dynamic_filter_fn(
+                move |_meta, _ctx| flag.load(Ordering::Relaxed),
+            ))
+            .with(
+                export
+                    .clone()
+                    .with_filter(OpenTelemetry::export_level_for(level)),
+            )
+            .with(
+                stdout
+                    .clone()
+                    .with_filter(OpenTelemetry::stdout_level_for(level)),
+            );
+
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::info_span!("request").in_scope(|| {
+                tracing::debug!("detail");
+                tracing::info!("handled");
+                tracing::warn!("slow");
+            });
+
+            // Disabling the session silences every layer, whatever its level.
+            enabled.store(false, Ordering::Relaxed);
+            tracing::warn_span!("disabled").in_scope(|| tracing::error!("dropped"));
+        });
+
+        use tracing::Level;
+        assert_eq!(*stdout.0.lock().unwrap(), vec![("event", Level::WARN)]);
+        assert_eq!(
+            *export.0.lock().unwrap(),
+            vec![
+                ("span", Level::INFO),
+                ("event", Level::INFO),
+                ("event", Level::WARN)
+            ]
+        );
     }
 
     #[test]

@@ -122,6 +122,12 @@ fn main() {
 }
 ```
 
+The `LOG_LEVEL` environment variable (`error`, `warn`, `info`, `debug` or `trace`), or
+`.with_default_level(...)` when it is unset, controls how much is written to stdout. It does not
+reduce what is exported over OTLP, which always includes `INFO` spans and log events, so
+`LOG_LEVEL=warn` quietens your console without losing your traces. Setting it to `debug` or
+`trace` makes the OTLP export more verbose as well.
+
 The OpenTelemetry resource is populated from your `Session`'s metadata (its service name,
 version, host information, and any `.with_context(...)` values). You can attach additional
 custom resource attributes, or override the ones derived from the session metadata, by setting
@@ -169,8 +175,8 @@ fn main() {
 - `with_metrics()` installs a global `MeterProvider` exporting cumulative metrics on the
   `OTEL_METRIC_EXPORT_INTERVAL` cadence (default 60s). Measurements are recorded against the
   active span context, so exemplars will attach automatically once the Rust SDK emits them.
-- `with_logs()` exports `tracing` events as OTLP log records (subject to `LOG_LEVEL` / the
-  default level), each carrying the trace and span IDs of the span it was emitted within.
+- `with_logs()` exports `tracing` events as OTLP log records (at `INFO` and above, or more
+  verbose when `LOG_LEVEL` asks for it), each carrying the trace and span IDs of the span it was emitted within.
   Event fields become log attributes, and an error-typed field becomes `exception.message`.
 - Both signals honour the session's `enabled` flag, so they are suppressed in debug builds
   unless `.with_debug_builds()` is used.
