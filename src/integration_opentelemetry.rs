@@ -1,6 +1,8 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
+    ffi::OsString,
+    io::IsTerminal,
     sync::{Arc, atomic::AtomicBool},
     time::Duration,
 };
@@ -65,6 +67,13 @@ pub use tracing::Level as OpenTelemetryLevel;
 /// - [`with_logs`](OpenTelemetry::with_logs) exports [`tracing`] events as OTLP log records,
 ///   carrying the trace and span IDs of the span they were emitted within.
 ///
+/// ## Colour in the stdout output
+///
+/// When the integration writes to stdout, ANSI colour escape codes are only emitted if stdout is
+/// a terminal and the [`NO_COLOR`](https://no-color.org) environment variable is not set. This
+/// keeps escape codes out of captured logs (`docker logs`, systemd journals, CI output) without
+/// any configuration. Use [`OpenTelemetry::with_ansi`] to decide explicitly instead.
+///
 /// ## Example (gRPC)
 /// ```no_run
 /// use tracing_batteries::{Session, OpenTelemetry, OpenTelemetryProtocol};
@@ -98,6 +107,7 @@ pub struct OpenTelemetry {
     use_metrics: bool,
     default_level: Option<OpenTelemetryLevel>,
     force_stdout: Option<bool>,
+    ansi: Option<bool>,
 }
 
 impl OpenTelemetry {
@@ -139,6 +149,7 @@ impl OpenTelemetry {
             use_log_events: false,
             use_metrics: false,
             force_stdout: None,
+            ansi: None,
         }
     }
 
@@ -254,6 +265,29 @@ impl OpenTelemetry {
     pub fn with_stdout(self, stdout: bool) -> Self {
         Self {
             force_stdout: Some(stdout),
+            ..self
+        }
+    }
+
+    /// Configures whether the stdout log output is colourized with ANSI escape codes.
+    ///
+    /// By default, colour is used only when stdout is a terminal and the
+    /// [`NO_COLOR`](https://no-color.org) environment variable is not set, so that a process
+    /// whose output is captured (by `docker logs`, a systemd journal, or a CI log) writes plain
+    /// text rather than escape codes. This method overrides that decision in both directions,
+    /// which is useful for a log viewer that renders colour itself, or for a terminal session
+    /// that should stay plain.
+    ///
+    /// ## Example
+    /// ```rust
+    /// use tracing_batteries::OpenTelemetry;
+    ///
+    /// OpenTelemetry::new("localhost:4317")
+    ///  .with_ansi(false);
+    /// ```
+    pub fn with_ansi(self, ansi: bool) -> Self {
+        Self {
+            ansi: Some(ansi),
             ..self
         }
     }
@@ -580,12 +614,39 @@ impl OpenTelemetry {
         }
     }
 
+    /// Decides whether the stdout layer should emit ANSI colour escape codes.
+    ///
+    /// An explicit [`OpenTelemetry::with_ansi`] always wins; otherwise the decision is made from
+    /// the environment by [`OpenTelemetry::should_use_ansi`].
+    fn build_ansi(&self) -> bool {
+        self.ansi.unwrap_or_else(|| {
+            Self::should_use_ansi(
+                std::io::stdout().is_terminal(),
+                std::env::var_os("NO_COLOR"),
+            )
+        })
+    }
+
+    /// The default colour decision, as a pure function of its two inputs.
+    ///
+    /// Colour is for a human at a terminal: if stdout is a pipe or a file then the escape codes
+    /// only end up in somebody's log file, so they are left out. The
+    /// [`NO_COLOR`](https://no-color.org) convention lets an operator turn colour off even on a
+    /// terminal by setting the variable to any value.
+    fn should_use_ansi(is_terminal: bool, no_color: Option<OsString>) -> bool {
+        if no_color.is_some() {
+            return false;
+        }
+
+        is_terminal
+    }
+
     fn build_stdout_layer<
         S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
     >(
         &self,
     ) -> impl Layer<S> {
-        tracing_subscriber::fmt::layer()
+        tracing_subscriber::fmt::layer().with_ansi(self.build_ansi())
     }
 }
 
@@ -759,6 +820,44 @@ mod test {
         // Entries with an empty key, or without an `=` separator, are ignored.
         assert_eq!(parsed.get(""), None);
         assert!(!parsed.contains_key("malformed"));
+    }
+
+    #[test]
+    fn colour_defaults_to_a_terminal_without_no_color() {
+        use std::ffi::OsString;
+
+        // Colour is for a human reading a terminal...
+        assert!(OpenTelemetry::should_use_ansi(true, None));
+
+        // ...and escape codes in a captured log (`docker logs`, a journal, CI output) are noise.
+        assert!(!OpenTelemetry::should_use_ansi(false, None));
+
+        // `NO_COLOR` turns colour off whatever its value, per https://no-color.org.
+        assert!(!OpenTelemetry::should_use_ansi(
+            true,
+            Some(OsString::from("1"))
+        ));
+        assert!(!OpenTelemetry::should_use_ansi(true, Some(OsString::new())));
+        assert!(!OpenTelemetry::should_use_ansi(
+            false,
+            Some(OsString::from("1"))
+        ));
+    }
+
+    #[test]
+    fn with_ansi_overrides_the_environment() {
+        // An explicit choice wins in both directions, so a log viewer that renders colour itself
+        // can ask for it even when stdout is a pipe.
+        assert!(
+            OpenTelemetry::new("localhost:4317")
+                .with_ansi(true)
+                .build_ansi()
+        );
+        assert!(
+            !OpenTelemetry::new("localhost:4317")
+                .with_ansi(false)
+                .build_ansi()
+        );
     }
 
     #[test]

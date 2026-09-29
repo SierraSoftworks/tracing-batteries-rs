@@ -175,6 +175,12 @@ fn main() {
 - Both signals honour the session's `enabled` flag, so they are suppressed in debug builds
   unless `.with_debug_builds()` is used.
 
+When this integration writes to stdout, it colourizes the output with ANSI escape codes only if
+stdout is a terminal and the [`NO_COLOR`](https://no-color.org) environment variable is unset
+(setting it to any value disables colour), so captured logs — `docker logs`, a systemd journal, or
+a CI run — stay free of escape codes. Call `.with_ansi(true)` or `.with_ansi(false)` on the battery
+to make that choice explicitly instead.
+
 ### Sentry
 The `Sentry` integration allows you to send session and error information to
 Sentry from within your application.
