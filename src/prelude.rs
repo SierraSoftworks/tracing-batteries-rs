@@ -22,8 +22,5 @@ pub use opentelemetry::{
 #[cfg(feature = "opentelemetry")]
 pub use opentelemetry_sdk::propagation::TraceContextPropagator;
 
-#[cfg(feature = "pyroscope")]
-pub use pyroscope;
-
 #[cfg(feature = "sentry")]
 pub use sentry;

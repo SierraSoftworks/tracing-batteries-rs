@@ -99,7 +99,7 @@ pub use tracing::Level as OpenTelemetryLevel;
 /// ```
 ///
 pub struct OpenTelemetry {
-    endpoint: Cow<'static, str>,
+    pub(crate) endpoint: Cow<'static, str>,
     headers: HashMap<Cow<'static, str>, Cow<'static, str>>,
     protocol: Option<OpenTelemetryProtocol>,
     sampler: OpenTelemetrySampler,
@@ -482,7 +482,7 @@ impl OpenTelemetry {
         })
     }
 
-    fn tonic_tls_config(&self) -> tonic::transport::ClientTlsConfig {
+    pub(crate) fn tonic_tls_config(&self) -> tonic::transport::ClientTlsConfig {
         tonic::transport::ClientTlsConfig::new()
             .with_native_roots()
             .with_webpki_roots()
@@ -490,7 +490,7 @@ impl OpenTelemetry {
 
     /// The configured headers as gRPC request metadata, skipping any header whose key or value
     /// cannot be represented as gRPC metadata.
-    fn tonic_metadata(&self) -> tonic::metadata::MetadataMap {
+    pub(crate) fn tonic_metadata(&self) -> tonic::metadata::MetadataMap {
         let mut tracing_metadata = tonic::metadata::MetadataMap::new();
         for (key, value) in self.headers.iter() {
             if let (Ok(key), Ok(value)) = (
@@ -503,14 +503,14 @@ impl OpenTelemetry {
         tracing_metadata
     }
 
-    fn http_headers(&self) -> HashMap<String, String> {
+    pub(crate) fn http_headers(&self) -> HashMap<String, String> {
         self.headers
             .iter()
             .map(|(key, value)| (key.to_string(), value.to_string()))
             .collect()
     }
 
-    fn get_protocol(&self) -> OpenTelemetryProtocol {
+    pub(crate) fn get_protocol(&self) -> OpenTelemetryProtocol {
         match std::env::var("OTEL_EXPORTER_OTLP_PROTOCOL").ok().as_deref() {
             Some("http-binary") => opentelemetry_otlp::Protocol::HttpBinary,
             Some("http-json") => opentelemetry_otlp::Protocol::HttpJson,
@@ -519,7 +519,7 @@ impl OpenTelemetry {
         }
     }
 
-    fn build_resource(&self, metadata: &crate::Metadata) -> Resource {
+    pub(crate) fn build_resource(&self, metadata: &crate::Metadata) -> Resource {
         self.build_resource_with_env(metadata, Self::env_resource_attributes())
     }
 

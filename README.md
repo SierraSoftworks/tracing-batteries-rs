@@ -187,28 +187,30 @@ stdout is a terminal and the [`NO_COLOR`](https://no-color.org) environment vari
 a CI run — stay free of escape codes. Call `.with_ansi(true)` or `.with_ansi(false)` on the battery
 to make that choice explicitly instead.
 
-### Pyroscope
-The `Pyroscope` integration continuously profiles your application and uploads the profiles to a
-[Pyroscope](https://grafana.com/oss/pyroscope/) server. Profiles are labelled with your `Session`'s
-service name, version (`service_version`), and `.with_context(...)` values.
+### Profiling
+The `Profiling` integration continuously profiles your application and exports the profiles to an
+OpenTelemetry collector using the OTLP profiles signal. It connects to the collector in the same
+way as the `OpenTelemetry` integration and honours the same `OTEL_EXPORTER_OTLP_ENDPOINT`,
+`OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_PROTOCOL` and `OTEL_RESOURCE_ATTRIBUTES`
+environment variables, so profiles are sent to the same collector and described by the same
+resource as your traces.
 
-**NOTE** You will need to ensure that the `pyroscope` feature is enabled, along with the feature
+**NOTE** You will need to ensure that the `profiling` feature is enabled, along with the feature
 for each backend you want to use. These are **NOT** enabled by default.
 
 | Backend             | Feature              | Profile                                                             |
 | ------------------- | -------------------- | ------------------------------------------------------------------- |
-| `PyroscopePprof`    | `pyroscope-pprof`    | CPU (Linux and macOS only)                                          |
-| `PyroscopeJemalloc` | `pyroscope-jemalloc` | Memory (requires jemalloc as your allocator, with profiling active) |
+| `ProfilingPprof`    | `profiling-pprof`    | CPU (Linux and macOS, a no-op on other platforms)                   |
+| `ProfilingJemalloc` | `profiling-jemalloc` | Memory (requires jemalloc as your allocator, with profiling active) |
 
 ```rust
-use tracing_batteries::{Session, Pyroscope, PyroscopePprof, PyroscopeJemalloc};
+use tracing_batteries::{Session, OpenTelemetry, Profiling, ProfilingPprof};
 
 fn main() {
     let session = Session::new("my-service", env!("CARGO_PKG_VERSION"))
-        .with_battery(Pyroscope::new("https://profiles-prod-001.grafana.net")
-          .with_basic_auth("123456", "your-access-token")
-          .with_backend(PyroscopePprof::new().with_sample_rate(100))
-          .with_backend(PyroscopeJemalloc));
+        .with_battery(OpenTelemetry::new("https://otlp.example.com"))
+        .with_battery(Profiling::new("https://otlp.example.com")
+          .with_backend(ProfilingPprof::new().with_sample_rate(100)));
 
     // Your app code goes here
 
@@ -216,12 +218,13 @@ fn main() {
 }
 ```
 
-- The `PYROSCOPE_SERVER_ADDRESS`, `PYROSCOPE_BASIC_AUTH_USER`, `PYROSCOPE_BASIC_AUTH_PASSWORD` and
-  `PYROSCOPE_TENANT_ID` environment variables take precedence over the values provided in code.
-- Profiling only starts if the session is enabled when the battery is attached, so debug builds
-  need `.with_debug_builds()`.
-- Any other `pyroscope` backend can be passed to `.with_backend(...)` directly, or by implementing
-  the `PyroscopeBackend` trait.
+- The OTLP profiles signal is still in development, so your collector needs profiles support
+  enabled. For the OpenTelemetry Collector, that is the `service.profilesSupport` feature gate
+  and a `profiles` pipeline which includes the `otlp` receiver.
+- Profiling only starts if the session is enabled when the battery is attached (so debug builds
+  need `.with_debug_builds()`), and nothing is exported while the session is disabled.
+- Any backend built for the [`pyroscope`](https://github.com/grafana/pyroscope-rs) crate can be
+  passed to `.with_backend(...)` directly, or by implementing the `ProfilingBackend` trait.
 
 ### Sentry
 The `Sentry` integration allows you to send session and error information to

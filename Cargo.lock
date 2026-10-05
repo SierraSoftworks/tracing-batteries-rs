@@ -3045,13 +3045,16 @@ name = "tracing-batteries"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "flate2",
  "hex",
  "human-errors",
  "iana-time-zone",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
+ "opentelemetry-proto",
  "opentelemetry_sdk",
+ "prost",
  "pyroscope",
  "radix_fmt",
  "rand 0.10.3",
