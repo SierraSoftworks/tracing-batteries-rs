@@ -187,6 +187,42 @@ stdout is a terminal and the [`NO_COLOR`](https://no-color.org) environment vari
 a CI run — stay free of escape codes. Call `.with_ansi(true)` or `.with_ansi(false)` on the battery
 to make that choice explicitly instead.
 
+### Pyroscope
+The `Pyroscope` integration continuously profiles your application and uploads the profiles to a
+[Pyroscope](https://grafana.com/oss/pyroscope/) server. Profiles are labelled with your `Session`'s
+service name, version (`service_version`), and `.with_context(...)` values.
+
+**NOTE** You will need to ensure that the `pyroscope` feature is enabled, along with the feature
+for each backend you want to use. These are **NOT** enabled by default.
+
+| Backend             | Feature              | Profile                                                             |
+| ------------------- | -------------------- | ------------------------------------------------------------------- |
+| `PyroscopePprof`    | `pyroscope-pprof`    | CPU (Linux and macOS only)                                          |
+| `PyroscopeJemalloc` | `pyroscope-jemalloc` | Memory (requires jemalloc as your allocator, with profiling active) |
+
+```rust
+use tracing_batteries::{Session, Pyroscope, PyroscopePprof, PyroscopeJemalloc};
+
+fn main() {
+    let session = Session::new("my-service", env!("CARGO_PKG_VERSION"))
+        .with_battery(Pyroscope::new("https://profiles-prod-001.grafana.net")
+          .with_basic_auth("123456", "your-access-token")
+          .with_backend(PyroscopePprof::new().with_sample_rate(100))
+          .with_backend(PyroscopeJemalloc));
+
+    // Your app code goes here
+
+    session.shutdown();
+}
+```
+
+- The `PYROSCOPE_SERVER_ADDRESS`, `PYROSCOPE_BASIC_AUTH_USER`, `PYROSCOPE_BASIC_AUTH_PASSWORD` and
+  `PYROSCOPE_TENANT_ID` environment variables take precedence over the values provided in code.
+- Profiling only starts if the session is enabled when the battery is attached, so debug builds
+  need `.with_debug_builds()`.
+- Any other `pyroscope` backend can be passed to `.with_backend(...)` directly, or by implementing
+  the `PyroscopeBackend` trait.
+
 ### Sentry
 The `Sentry` integration allows you to send session and error information to
 Sentry from within your application.

@@ -10,6 +10,8 @@ mod integration_analytics;
 mod integration_medama;
 #[cfg(feature = "opentelemetry")]
 mod integration_opentelemetry;
+#[cfg(feature = "pyroscope")]
+mod integration_pyroscope;
 #[cfg(feature = "sentry")]
 mod integration_sentry;
 #[cfg(feature = "testing")]
@@ -32,6 +34,8 @@ pub use integration_analytics::*;
 pub use integration_medama::*;
 #[cfg(feature = "opentelemetry")]
 pub use integration_opentelemetry::*;
+#[cfg(feature = "pyroscope")]
+pub use integration_pyroscope::*;
 #[cfg(feature = "sentry")]
 pub use integration_sentry::*;
 #[cfg(feature = "testing")]
