@@ -32,6 +32,8 @@ use crate::{
 pub use pyroscope::backend::BackendConfig as ProfilingBackendConfig;
 
 const DEFAULT_SAMPLE_RATE: u32 = 100;
+// Rates outside of this range cannot be represented by the profilers' microsecond timers.
+const SAMPLE_RATES: std::ops::RangeInclusive<u32> = 1..=1_000_000;
 const DEFAULT_UPLOAD_INTERVAL: Duration = Duration::from_secs(10);
 const EXPORT_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -40,10 +42,13 @@ const EXPORT_TIMEOUT: Duration = Duration::from_secs(10);
 ///
 /// The backends shipped with this library are each gated behind a feature flag:
 /// [`ProfilingPprof`] (`profiling-pprof`) and [`ProfilingJemalloc`] (`profiling-jemalloc`).
-/// The trait is also implemented for [`BackendImpl`], so that any other backend built for the
-/// [`pyroscope`] crate can be attached directly.
+/// Any other backend built for the [`pyroscope`] crate can be attached by implementing this
+/// trait for a type which constructs it.
 pub trait ProfilingBackend {
     /// The frequency (in Hz) at which this backend samples, used to scale the reported profile.
+    ///
+    /// This must match the rate that the profiler built by [`ProfilingBackend::build`] samples
+    /// at, and backends with a rate outside of 1Hz to 1MHz are skipped.
     fn sample_rate(&self) -> u32 {
         DEFAULT_SAMPLE_RATE
     }
@@ -51,12 +56,6 @@ pub trait ProfilingBackend {
     /// Constructs the underlying profiler, or returns [`None`] if it is not supported on the
     /// current platform.
     fn build(self: Box<Self>) -> Option<BackendImpl<BackendUninitialized>>;
-}
-
-impl ProfilingBackend for BackendImpl<BackendUninitialized> {
-    fn build(self: Box<Self>) -> Option<BackendImpl<BackendUninitialized>> {
-        Some(*self)
-    }
 }
 
 /// A CPU profiling backend for the [`Profiling`] integration, which samples the stacks of the
@@ -205,8 +204,9 @@ impl ProfilingBackend for ProfilingJemalloc {
 /// ## Disabled sessions
 ///
 /// Profiling only starts if the session is enabled when the battery is attached (so debug
-/// builds need [`Metadata::with_debug_builds`]) and the endpoint is not empty. Nothing is
-/// exported while the session is disabled.
+/// builds need [`Metadata::with_debug_builds`]) and the endpoint is not empty. The session's
+/// enabled state is then checked each time profiles are due to be exported, with the profiles
+/// gathered since the previous export being discarded if it is disabled at that point.
 ///
 /// ## Example
 /// ```no_run
@@ -333,6 +333,14 @@ impl BatteryBuilder for Profiling {
         } else {
             for backend in std::mem::take(&mut self.backends) {
                 let sample_rate = backend.sample_rate();
+                if !SAMPLE_RATES.contains(&sample_rate) {
+                    tracing::warn!(
+                        sample_rate,
+                        "Skipping a profiling backend with an unsupported sample rate."
+                    );
+                    continue;
+                }
+
                 match backend.build().map(BackendImpl::initialize) {
                     Some(Ok(backend)) => profilers.push(Profiler {
                         backend,
@@ -459,7 +467,7 @@ impl Worker {
                 let profile = match profiler.backend.report().map(|batch| batch.data) {
                     Ok(ReportData::Reports(reports)) => pyroscope::encode::pprof::encode(
                         &reports,
-                        profiler.sample_rate.max(1),
+                        profiler.sample_rate,
                         start,
                         duration,
                     ),

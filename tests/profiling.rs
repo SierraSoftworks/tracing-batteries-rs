@@ -47,10 +47,14 @@ fn collector() -> (String, Receiver<(String, Vec<u8>)>) {
 }
 
 fn battery(endpoint: String) -> Profiling {
+    battery_with(endpoint, ProfilingPprof::new())
+}
+
+fn battery_with(endpoint: String, backend: ProfilingPprof) -> Profiling {
     Profiling::new(endpoint)
         .with_protocol(OpenTelemetryProtocol::HttpBinary)
         .with_header("x-example", "yes")
-        .with_backend(ProfilingPprof::new())
+        .with_backend(backend)
 }
 
 /// Keeps the CPU busy for long enough that the profiler is certain to have sampled it.
@@ -128,4 +132,26 @@ fn disabled_sessions_are_not_profiled() {
         exports.recv_timeout(Duration::from_millis(500)).is_err(),
         "a disabled session should not export profiles"
     );
+}
+
+#[test]
+fn unsupported_sample_rates_are_skipped() {
+    for sample_rate in [0, 2_000_000] {
+        let (endpoint, exports) = collector();
+
+        let session = Session::new("example", "0.0.1")
+            .with_debug_builds()
+            .with_battery(battery_with(
+                endpoint,
+                ProfilingPprof::new().with_sample_rate(sample_rate),
+            ));
+
+        burn_cpu();
+        session.shutdown();
+
+        assert!(
+            exports.recv_timeout(Duration::from_millis(500)).is_err(),
+            "a sample rate of {sample_rate}Hz should not be profiled"
+        );
+    }
 }

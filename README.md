@@ -222,9 +222,10 @@ fn main() {
   enabled. For the OpenTelemetry Collector, that is the `service.profilesSupport` feature gate
   and a `profiles` pipeline which includes the `otlp` receiver.
 - Profiling only starts if the session is enabled when the battery is attached (so debug builds
-  need `.with_debug_builds()`), and nothing is exported while the session is disabled.
+  need `.with_debug_builds()`), and each export is skipped if the session is disabled when it
+  is due.
 - Any backend built for the [`pyroscope`](https://github.com/grafana/pyroscope-rs) crate can be
-  passed to `.with_backend(...)` directly, or by implementing the `ProfilingBackend` trait.
+  attached by implementing the `ProfilingBackend` trait.
 
 ### Sentry
 The `Sentry` integration allows you to send session and error information to
