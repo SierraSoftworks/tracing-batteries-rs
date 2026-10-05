@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 chrono = { version = "0.4.45", optional = true }
+flate2 = { version = "1.1", optional = true }
 hex = { version = "0.4.3", optional = true }
 human-errors = { version = "0.2.4", optional = true, features = ["backtraces"] }
 iana-time-zone = { version = "0.1.65", optional = true }
@@ -19,6 +20,11 @@ opentelemetry-otlp = { version = "0.33.0", features = [
   "tls-ring",
   "tls-roots",
 ], optional = true }
+opentelemetry-proto = { version = "0.33.0", default-features = false, features = [
+  "gen-tonic",
+  "profiles",
+], optional = true }
+prost = { version = "0.14", optional = true }
 radix_fmt = { version = "1.0.0", optional = true }
 rand = { version = "0.10.1", optional = true }
 reqwest = { version = "0.12.28", default-features = false, features = [
@@ -47,13 +53,32 @@ tracing-opentelemetry = { git = "https://github.com/tokio-rs/tracing-opentelemet
 tracing-subscriber = { version = "0.3.23" }
 opentelemetry-appender-tracing = { version = "0.33.0", optional = true }
 
+# The profilers do not compile on Windows, where the `Profiling` battery is a no-op.
+[target.'cfg(not(windows))'.dependencies]
+pyroscope = { version = "2.1.1", optional = true }
+
+# The pprof-rs backend only supports these targets (and fails to compile elsewhere), so it is
+# enabled per-target, leaving the `ProfilingPprof` backend as a no-op on other platforms.
+[target.'cfg(all(any(target_os = "linux", target_os = "macos"), any(target_arch = "x86_64", target_arch = "aarch64")))'.dependencies]
+pyroscope = { version = "2.1.1", optional = true, features = ["backend-pprof-rs"] }
+
 [dev-dependencies]
+opentelemetry-proto = { version = "0.33.0", default-features = false, features = ["gen-tonic-messages", "profiles"] }
+prost = "0.14"
 serde_json = "1"
 tokio = { version = "1.52.3", features = ["full"] }
 
 [[example]]
 name = "analytics"
 required-features = ["analytics"]
+
+[[example]]
+name = "profiling"
+required-features = ["profiling-pprof"]
+
+[[test]]
+name = "profiling"
+required-features = ["profiling-pprof"]
 
 [features]
 default = ["opentelemetry", "sentry"]
@@ -98,5 +123,15 @@ umami = [
   "dep:sys-locale",
   "dep:tokio",
 ]
+profiling = [
+  "opentelemetry",
+  "dep:flate2",
+  "dep:opentelemetry-proto",
+  "dep:prost",
+  "dep:pyroscope",
+  "dep:tokio",
+]
+profiling-pprof = ["profiling"]
+profiling-jemalloc = ["profiling", "pyroscope/backend-jemalloc"]
 testing = []
 human_errors = ["dep:human-errors"]

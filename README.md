@@ -187,6 +187,48 @@ stdout is a terminal and the [`NO_COLOR`](https://no-color.org) environment vari
 a CI run — stay free of escape codes. Call `.with_ansi(true)` or `.with_ansi(false)` on the battery
 to make that choice explicitly instead.
 
+### Profiling
+The `Profiling` integration continuously profiles your application and exports the profiles to an
+OpenTelemetry collector using the OTLP profiles signal. It connects to the collector in the same
+way as the `OpenTelemetry` integration and honours the same `OTEL_EXPORTER_OTLP_ENDPOINT`,
+`OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_PROTOCOL` and `OTEL_RESOURCE_ATTRIBUTES`
+environment variables, so profiles are sent to the same collector and described by the same
+resource as your traces.
+
+**NOTE** You will need to ensure that the `profiling` feature is enabled, along with the feature
+for each backend you want to use. These are **NOT** enabled by default.
+
+| Backend             | Feature              | Profile                                                             |
+| ------------------- | -------------------- | ------------------------------------------------------------------- |
+| `ProfilingPprof`    | `profiling-pprof`    | CPU (Linux and macOS)                                               |
+| `ProfilingJemalloc` | `profiling-jemalloc` | Memory (requires jemalloc as your allocator, with profiling active) |
+
+```rust
+use tracing_batteries::{Session, OpenTelemetry, Profiling, ProfilingPprof};
+
+fn main() {
+    let session = Session::new("my-service", env!("CARGO_PKG_VERSION"))
+        .with_battery(OpenTelemetry::new("https://otlp.example.com"))
+        .with_battery(Profiling::new("https://otlp.example.com")
+          .with_backend(ProfilingPprof::new().with_sample_rate(100)));
+
+    // Your app code goes here
+
+    session.shutdown();
+}
+```
+
+- The OTLP profiles signal is still in development, so your collector needs profiles support
+  enabled. For the OpenTelemetry Collector, that is the `service.profilesSupport` feature gate
+  and a `profiles` pipeline which includes the `otlp` receiver.
+- Profiling is not available on Windows, where the integration and its backends do nothing, so
+  it can be configured unconditionally by applications built for several platforms.
+- Profiling only starts if the session is enabled when the battery is attached (so debug builds
+  need `.with_debug_builds()`), and each export is skipped if the session is disabled when it
+  is due.
+- Any backend built for the [`pyroscope`](https://github.com/grafana/pyroscope-rs) crate can be
+  attached by implementing the `ProfilingBackend` trait.
+
 ### Sentry
 The `Sentry` integration allows you to send session and error information to
 Sentry from within your application.
