@@ -25,7 +25,6 @@ opentelemetry-proto = { version = "0.33.0", default-features = false, features =
   "profiles",
 ], optional = true }
 prost = { version = "0.14", optional = true }
-pyroscope = { version = "2.1.1", optional = true }
 radix_fmt = { version = "1.0.0", optional = true }
 rand = { version = "0.10.1", optional = true }
 reqwest = { version = "0.12.28", default-features = false, features = [
@@ -53,6 +52,10 @@ tracing-futures = { version = "0.2.5", features = ["futures-03"] }
 tracing-opentelemetry = { git = "https://github.com/tokio-rs/tracing-opentelemetry.git", rev = "b475aa173d926b5f8bc4eecf255691a453850b4c", optional = true }
 tracing-subscriber = { version = "0.3.23" }
 opentelemetry-appender-tracing = { version = "0.33.0", optional = true }
+
+# The profilers do not compile on Windows, where the `Profiling` battery is a no-op.
+[target.'cfg(not(windows))'.dependencies]
+pyroscope = { version = "2.1.1", optional = true }
 
 # The pprof-rs backend only supports these targets (and fails to compile elsewhere), so it is
 # enabled per-target, leaving the `ProfilingPprof` backend as a no-op on other platforms.

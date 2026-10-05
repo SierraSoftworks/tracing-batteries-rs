@@ -200,7 +200,7 @@ for each backend you want to use. These are **NOT** enabled by default.
 
 | Backend             | Feature              | Profile                                                             |
 | ------------------- | -------------------- | ------------------------------------------------------------------- |
-| `ProfilingPprof`    | `profiling-pprof`    | CPU (Linux and macOS, a no-op on other platforms)                   |
+| `ProfilingPprof`    | `profiling-pprof`    | CPU (Linux and macOS)                                               |
 | `ProfilingJemalloc` | `profiling-jemalloc` | Memory (requires jemalloc as your allocator, with profiling active) |
 
 ```rust
@@ -221,6 +221,8 @@ fn main() {
 - The OTLP profiles signal is still in development, so your collector needs profiles support
   enabled. For the OpenTelemetry Collector, that is the `service.profilesSupport` feature gate
   and a `profiles` pipeline which includes the `otlp` receiver.
+- Profiling is not available on Windows, where the integration and its backends do nothing, so
+  it can be configured unconditionally by applications built for several platforms.
 - Profiling only starts if the session is enabled when the battery is attached (so debug builds
   need `.with_debug_builds()`), and each export is skipped if the session is disabled when it
   is due.
